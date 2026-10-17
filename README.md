@@ -50,3 +50,7 @@ its SQL importers (ANTLR, ~34 MB), so it is ~0.5 MB; only DBML is parsed.
 Open Diagram: MIT. Bundled in `vendor/`: [`@dbml/core`](https://github.com/holistics/dbml)
 (Apache-2.0) and [`elkjs`](https://github.com/kieler/elkjs) (EPL-2.0).
 `examples/open-ledger.dbml` is from [pinkainc/open-ledger](https://github.com/pinkainc/open-ledger) (MIT).
+
+## Vezani dokumenti
+
+- [docs/2026-10-17-renderer-odluke.md](docs/2026-10-17-renderer-odluke.md): odluke, mjerenja rasporeda, zamke, otvorene stavke
