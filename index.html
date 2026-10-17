@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Diagram</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <header class="toolbar">
+    <strong class="brand">Open Diagram</strong>
+    <span id="doc-name" class="doc-name"></span>
+    <div class="group">
+      <button data-action="toggle-editor" title="Show / hide editor">Editor</button>
+      <button data-action="open" title="Open .dbml or .layout.json (⌘O)">Open</button>
+      <button data-action="save-dbml" title="Download DBML (⌘S)">Save</button>
+    </div>
+    <div class="group">
+      <button data-action="auto-layout" title="Discard positions and lay out again">Auto layout</button>
+      <select id="detail" title="Detail level">
+        <option value="all">All fields</option>
+        <option value="keys">Keys only</option>
+        <option value="header">Names only</option>
+      </select>
+    </div>
+    <div class="group">
+      <button data-action="zoom-out" title="Zoom out (-)">−</button>
+      <span id="zoom-level" class="zoom-level">100%</span>
+      <button data-action="zoom-in" title="Zoom in (+)">+</button>
+      <button data-action="fit" title="Fit to screen (F)">Fit</button>
+    </div>
+    <div class="group">
+      <button data-action="export-svg">SVG</button>
+      <button data-action="export-png">PNG</button>
+      <button data-action="save-layout" title="Download table positions">Layout</button>
+    </div>
+    <input id="file-input" type="file" accept=".dbml,.txt,.json" hidden>
+  </header>
+
+  <main class="workspace">
+    <section class="editor-pane">
+      <div class="editor-wrap">
+        <div id="gutter" class="gutter" aria-hidden="true"></div>
+        <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      </div>
+      <div id="status"></div>
+    </section>
+    <div id="splitter" class="splitter"></div>
+    <section class="canvas-pane">
+      <svg id="diagram"></svg>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" hidden></div>
+
+  <script src="vendor/dbml-core.js"></script>
+  <script src="vendor/elk.bundled.js"></script>
+  <script src="src/theme.js"></script>
+  <script src="src/model.js"></script>
+  <script src="src/geometry.js"></script>
+  <script src="src/layout.js"></script>
+  <script src="src/render.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>

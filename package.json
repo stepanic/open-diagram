@@ -1,0 +1,17 @@
+{
+  "name": "open-diagram",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline DBML diagram renderer",
+  "license": "MIT",
+  "scripts": {
+    "build:vendor": "node scripts/build-vendor.mjs",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "devDependencies": {
+    "@dbml/core": "^10.3.1",
+    "elkjs": "^0.12.0",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.1"
+  }
+}
