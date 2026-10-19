@@ -1,7 +1,18 @@
 # Open Diagram
 
 Offline DBML diagram renderer in a single `index.html`: no server, no network, no build step to use it.
-Open the file in a browser, paste or open a `.dbml` file, drag things around, export SVG/PNG.
+It reads the same DBML as [dbdiagram.io](https://dbdiagram.io) (parsed by `@dbml/core` 10.x), for
+anyone who keeps a database schema as text and wants to see it, lay it out and export it locally.
+
+**[Try it](https://stepanic.github.io/open-diagram/)**, or open `index.html` from a clone.
+
+![Open Diagram showing a DiagramView of a ledger schema, with the editor on the left](docs/screenshot.png)
+
+## Why
+
+dbdiagram.io is proprietary and online only; its open part is the DBML parser. drawDB imports DBML
+through `@dbml/core` 3.x, which does not read current DBML (TablePartial, DiagramView, Dep, records).
+Open Diagram uses the current parser and draws everything with its own SVG renderer.
 
 ## Use
 
@@ -31,9 +42,21 @@ Open `index.html` directly (`file://` works).
   The last one used is remembered. Positions are remembered per file name in
   localStorage; **Layout** downloads them as JSON so they can travel with the `.dbml`.
 
-Supported DBML: tables (schemas, aliases, `headercolor`, notes), fields (pk, unique, not null,
-increment, default, note, inline refs), composite and single-column indexes, `Ref` with all
-relation types (including composite refs), enums, `TableGroup` (color, note) and sticky `Note`s.
+## Supported DBML
+
+- `Project` with a Markdown note (**Project** panel, key **P**)
+- tables: schemas, aliases, `headercolor`, notes, `check` and `checks { }`, custom properties
+  and `Metadata` blocks (in tooltips)
+- fields: pk, unique, not null, increment, default, note, inline refs; enum types
+- indexes, composite and single-column
+- `Ref` with every relation type, composite refs, optional ends (`>?`, drawn 0..1) and inactive
+  refs (dashed)
+- enums, `TableGroup` (colour, note) and sticky `Note`s
+- `TablePartial` (injected fields are marked), `records` (a sample in the table tooltip)
+- `DiagramView` (view picker in the toolbar) and data lineage `Dep` (key **L** toggles it)
+
+Not supported: modules (`use` / `reuse` across files) and SQL import (SQL export works).
+Details per feature, in Croatian: [docs/2026-10-19-dbml-znacajke.md](docs/2026-10-19-dbml-znacajke.md).
 
 ## Customise
 
@@ -67,10 +90,11 @@ but not imported.
 ## Licences
 
 Open Diagram: MIT. Bundled in `vendor/`: [`@dbml/core`](https://github.com/holistics/dbml)
-(Apache-2.0) and [`elkjs`](https://github.com/kieler/elkjs) (EPL-2.0).
+(Apache-2.0) and [`elkjs`](https://github.com/kieler/elkjs) (EPL-2.0), with their bundled
+dependencies; licence texts in [`vendor/THIRD_PARTY_LICENSES.md`](vendor/THIRD_PARTY_LICENSES.md).
 `examples/open-ledger.dbml` is from [pinkainc/open-ledger](https://github.com/pinkainc/open-ledger) (MIT).
 
-## Vezani dokumenti
+## Design notes (in Croatian)
 
 - [docs/2026-10-17-renderer-odluke.md](docs/2026-10-17-renderer-odluke.md): odluke, mjerenja rasporeda, zamke, otvorene stavke
 - [docs/2026-10-19-dbml-znacajke.md](docs/2026-10-19-dbml-znacajke.md): sve značajke DBML-a, što Open Diagram od njih prikazuje, što dodati
