@@ -14,7 +14,7 @@
     "url": "https://github.com/stepanic/open-diagram/issues"
   },
   "scripts": {
-    "build:vendor": "node scripts/build-vendor.mjs",
+    "build": "node scripts/build.mjs",
     "test": "node scripts/smoke-test.mjs"
   },
   "devDependencies": {

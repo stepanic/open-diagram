@@ -12,7 +12,7 @@ Umjesto toga: `@dbml/core` (Apache-2.0, isti Holisticsov parser) + `elkjs` + vla
 
 `Parser.mjs` statički uvozi ANTLR SQL importere (`parse/ANTLR` ≈ 34 MB na disku). Za
 `dbmlv2` ne trebaju, jer on ide kroz `@dbml/parse` (`Compiler`). esbuild plugin u
-`scripts/build-vendor.mjs` zamjenjuje `ANTLR/ASTGeneration/index.mjs` i
+`scripts/build.mjs` zamjenjuje `ANTLR/ASTGeneration/index.mjs` i
 `deprecated/*Parser.mjs` stubovima koji bacaju grešku ako ih se pozove.
 Ako nova verzija `@dbml/core` promijeni imena tih importa, build pada na nedostajućem exportu.
 Popravak je regex u pluginu.
