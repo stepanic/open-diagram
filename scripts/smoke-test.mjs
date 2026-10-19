@@ -178,6 +178,98 @@ for (const algo of await page.evaluate(() => OD.layoutAlgorithms.map((a) => a.id
   await page.screenshot({ path: path.join(outDir, `layout-${algo}.png`) });
 }
 
+// DBML beyond tables and refs: lineage, optional / inactive refs, views, project note, tooltips.
+await page.evaluate((src) => OD.app.openText('test.dbml', src), source);
+await page.waitForTimeout(400);
+const extra = await page.evaluate(() => {
+  const m = OD.app.state.model;
+  return {
+    deps: m.deps.length,
+    domDeps: document.querySelectorAll('.od-dep').length,
+    badDeps: [...document.querySelectorAll('.od-dep-line')].filter((p) => /NaN|undefined/.test(p.getAttribute('d'))).length,
+    optionalRefs: m.refs.filter((r) => r.from.optional || r.to.optional).length,
+    domOptional: document.querySelectorAll('.od-ref-optional').length,
+    inactiveRefs: m.refs.filter((r) => r.inactive).length,
+    domInactive: document.querySelectorAll('.od-ref.inactive').length,
+    views: m.views.map((v) => v.name),
+    projectNote: !!m.project.note,
+  };
+});
+check('every dep drawn', extra.domDeps === extra.deps, `${extra.domDeps}/${extra.deps}`);
+check('no broken dep paths', extra.badDeps === 0, `${extra.badDeps} bad`);
+check('optional refs get a 0..1 circle', extra.domOptional === extra.optionalRefs, `${extra.domOptional}/${extra.optionalRefs}`);
+check('inactive refs are dashed', extra.domInactive === extra.inactiveRefs, `${extra.domInactive}/${extra.inactiveRefs}`);
+
+if (extra.deps) {
+  await page.click('[data-action="toggle-deps"]');
+  const hidden = await page.evaluate(() => getComputedStyle(document.querySelector('.od-deps')).display === 'none');
+  await page.click('[data-action="toggle-deps"]');
+  const shown = await page.evaluate(() => getComputedStyle(document.querySelector('.od-deps')).display !== 'none');
+  check('lineage toggle hides and shows deps', hidden && shown);
+}
+
+if (extra.projectNote) {
+  await page.click('.toolbar [data-action="toggle-project"]');
+  const pp = await page.evaluate(() => ({ visible: !document.querySelector('#project-panel').hidden, html: document.querySelector('#project-body').innerHTML }));
+  check('project note panel renders Markdown', pp.visible && /<h1|<h2|<ul|<code/.test(pp.html), pp.html.slice(0, 60));
+  await page.screenshot({ path: path.join(outDir, 'project-note.png') });
+  await page.click('.toolbar [data-action="toggle-project"]');
+}
+
+for (const view of extra.views) {
+  await page.selectOption('#view', view);
+  await page.waitForTimeout(400);
+  const v = await page.evaluate(() => ({
+    tables: OD.app.state.model.tables.length,
+    dom: document.querySelectorAll('.od-table:not(.od-note)').length,
+    status: document.querySelector('#status').textContent,
+  }));
+  check(`view ${view} shows a subset`, v.tables > 0 && v.tables < info.tables && v.dom === v.tables, v.status);
+  await page.screenshot({ path: path.join(outDir, `view-${view}.png`) });
+}
+if (extra.views.length) {
+  await page.selectOption('#view', '');
+  await page.waitForTimeout(400);
+  check('whole model back after views', (await page.evaluate(() => OD.app.state.model.tables.length)) === info.tables);
+}
+
+// Tooltips for the extra information.
+const tipFor = async (selector) => {
+  await page.mouse.move(0, 0);
+  const box = await page.locator(selector).first().boundingBox();
+  if (!box) return '';
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(50);
+  return (await page.locator('#tooltip').isVisible()) ? page.locator('#tooltip').innerHTML() : '';
+};
+const special = await page.evaluate(() => {
+  const m = OD.app.state.model;
+  return {
+    checks: (m.tables.find((t) => t.checks.length) || {}).key,
+    props: (m.tables.find((t) => t.props) || {}).key,
+    records: (m.tables.find((t) => t.records.length) || {}).key,
+  };
+});
+await page.evaluate(() => OD.app.fit());
+if (special.checks) check('table tooltip lists checks', (await tipFor(`.od-table-header[data-key="${special.checks}"]`)).includes('checks:'));
+if (special.props) check('table tooltip lists custom properties', (await tipFor(`.od-table-header[data-key="${special.props}"]`)).includes('tt-props'));
+if (special.records) check('table tooltip shows records', (await tipFor(`.od-table-header[data-key="${special.records}"]`)).includes('tt-records'));
+if (extra.deps) {
+  // A point on the line itself; the middle of its bounding box is usually empty canvas.
+  const pt = await page.evaluate(() => {
+    const p = document.querySelector('.od-dep-hit');
+    const q = p.getPointAtLength(p.getTotalLength() / 2);
+    const s = new DOMPoint(q.x, q.y).matrixTransform(p.getScreenCTM());
+    return { x: s.x, y: s.y };
+  });
+  await page.mouse.move(0, 0);
+  await page.mouse.move(pt.x, pt.y);
+  await page.waitForTimeout(50);
+  const tip = (await page.locator('#tooltip').isVisible()) ? await page.locator('#tooltip').innerHTML() : '';
+  check('dep tooltip names both ends', tip.includes('→'), tip.replace(/<[^>]+>/g, '').slice(0, 80));
+}
+await page.screenshot({ path: path.join(outDir, 'deps.png') });
+
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
 
