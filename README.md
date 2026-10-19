@@ -49,6 +49,23 @@ Open `index.html` directly (`file://` works).
   The last one used is remembered. Positions are remembered per file name in
   localStorage; **Layout** downloads them as JSON so they can travel with the `.dbml`.
 
+## Embed (preview)
+
+A read-only diagram in another page: pan, zoom, tooltips, click to highlight, no editor.
+Try [examples/embed.html](https://stepanic.github.io/open-diagram/examples/embed.html).
+
+```html
+<open-diagram src="https://github.com/you/repo/blob/main/schema.dbml" height="480px"></open-diagram>
+<open-diagram focus="posts.author_id">Table posts { … }</open-diagram>
+```
+
+Attributes: `src` (or the DBML as the element's text), `layout` (a `.layout.json` saved by the
+app), `algorithm` (`compact` by default; `left-right` and `pipeline` load ELK on demand), `detail`,
+`view`, `height`, `focus` (`table` or `table.field`). Fenced ```` ```dbml ```` blocks and
+`<pre class="dbml">` on the page become diagrams too. The wheel scrolls the page; ⌘/Ctrl + scroll
+or pinch zooms. There is no single-file bundle yet, so the page loads the scripts that
+`examples/embed.html` lists.
+
 ## Supported DBML
 
 - `Project` with a Markdown note (**Project** panel, key **P**)
@@ -79,7 +96,10 @@ All visual decisions are in [`src/theme.js`](src/theme.js): fonts, sizes, colour
 | `src/layout.js` | the four auto layouts (ELK layered, stack, spiral, shelf packing), groups first, then the whole diagram |
 | `src/render.js` | SVG drawing and export |
 | `src/highlight.js` | DBML syntax highlighting for the editor (coloured layer under a transparent textarea) |
-| `src/app.js` | editor, pan/zoom/drag, tooltips, persistence, files |
+| `src/viewer.js` | pan, zoom, follow, tooltips and click to select; shared by the app and the embed |
+| `src/url.js` | GitHub, Gist and GitLab links → raw files |
+| `src/embed.js` | `<open-diagram>` web component and ```` ```dbml ```` block upgrade |
+| `src/app.js` | editor, table dragging, persistence, files, menus |
 
 ## Develop
 
@@ -105,4 +125,4 @@ dependencies; licence texts in [`vendor/THIRD_PARTY_LICENSES.md`](vendor/THIRD_P
 
 - [docs/2026-10-17-renderer-odluke.md](docs/2026-10-17-renderer-odluke.md): odluke, mjerenja rasporeda, zamke, otvorene stavke
 - [docs/2026-10-19-dbml-znacajke.md](docs/2026-10-19-dbml-znacajke.md): sve značajke DBML-a, što Open Diagram od njih prikazuje, što dodati
-- [docs/2026-10-19-embed.md](docs/2026-10-19-embed.md): prijedlog read-only ugradnje dijagrama u druge web stranice
+- [docs/2026-10-19-embed.md](docs/2026-10-19-embed.md): read-only ugradnja dijagrama u druge web stranice
