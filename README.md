@@ -26,6 +26,11 @@ Open `index.html` directly (`file://` works).
   optionally with `&view=<DiagramView>` and `&layout=<url of a .layout.json>`. Without `layout`, a
   `.layout.json` next to the `.dbml` is used if there is one and this browser has not arranged the
   file itself. Editing the text drops `?url=` from the address, so a reload keeps the edit.
+  Text that did not come from a URL (edited, or opened from disk) is shared as
+  `…/open-diagram/#dbml=…&layout=…`: the schema and the positions, deflated into the hash, which
+  never reaches the server. Large schemas make long links (open-ledger: ~17 KB).
+  **Share embed** copies an `<iframe>` or an `<open-diagram>` snippet of the current diagram
+  (see [Embed](#embed)).
 - **Drag** a table by any part of it; drag a TableGroup by its title to move the whole group.
 - **Scroll** pans, **pinch** or **⌘/Ctrl + scroll** zooms, **F** fits, **Esc** clears the selection.
 - **Click** a table to highlight its refs, **double-click** to jump to it in the editor.
@@ -49,22 +54,41 @@ Open `index.html` directly (`file://` works).
   The last one used is remembered. Positions are remembered per file name in
   localStorage; **Layout** downloads them as JSON so they can travel with the `.dbml`.
 
-## Embed (preview)
+## Embed
 
 A read-only diagram in another page: pan, zoom, tooltips, click to highlight, no editor.
-Try [examples/embed.html](https://stepanic.github.io/open-diagram/examples/embed.html).
+Try [examples/embed.html](https://stepanic.github.io/open-diagram/examples/embed.html). The
+quickest way is **URL ▾ → Share embed** in the app, which copies either form below with the current
+positions, view and detail level.
+
+One script, then as many diagrams as the page needs:
 
 ```html
+<script src="https://stepanic.github.io/open-diagram/dist/open-diagram-embed.js"></script>
+
 <open-diagram src="https://github.com/you/repo/blob/main/schema.dbml" height="480px"></open-diagram>
 <open-diagram focus="posts.author_id">Table posts { … }</open-diagram>
 ```
 
-Attributes: `src` (or the DBML as the element's text), `layout` (a `.layout.json` saved by the
-app), `algorithm` (`compact` by default; `left-right` and `pipeline` load ELK on demand), `detail`,
-`view`, `height`, `focus` (`table` or `table.field`). Fenced ```` ```dbml ```` blocks and
-`<pre class="dbml">` on the page become diagrams too. The wheel scrolls the page; ⌘/Ctrl + scroll
-or pinch zooms. There is no single-file bundle yet, so the page loads the scripts that
-`examples/embed.html` lists.
+Attributes: `src` (or the DBML as the element's text), `layout` (a `.layout.json` URL saved by the
+app, or that JSON inline), `algorithm` (`compact` by default; `left-right` and `pipeline` load ELK
+on demand), `detail`, `view`, `height`, `focus` (`table` or `table.field`). Fenced
+```` ```dbml ```` blocks and `<pre class="dbml">` on the page become diagrams too. The wheel scrolls
+the page; ⌘/Ctrl + scroll or pinch zooms.
+
+Where a page cannot run scripts (Notion, many CMSs), an iframe of `embed.html` does the same over
+the whole frame. Everything is in the hash: `#dbml=<deflated text>` or `#src=<URL of a .dbml>`,
+plus `&layout=`, `&view=`, `&detail=`, `&algorithm=`, `&focus=`.
+
+```html
+<iframe src="https://stepanic.github.io/open-diagram/embed.html#src=https://github.com/you/repo/blob/main/schema.dbml"
+        width="100%" height="480" style="border: 1px solid #d0d7de; border-radius: 8px" loading="lazy"></iframe>
+```
+
+`dist/open-diagram-embed.js` is ~630 KB (~170 KB gzip): `@dbml/core` and the renderer, without the
+editor. ELK (`dist/elk.js`, ~1.6 MB) is fetched only for the layered layouts; set `OD.elkUrl`
+before the script to load it from elsewhere. Licences: [`dist/LICENSES.txt`](dist/LICENSES.txt).
+To host it yourself, copy `dist/` as it is.
 
 ## Supported DBML
 
@@ -97,7 +121,7 @@ All visual decisions are in [`src/theme.js`](src/theme.js): fonts, sizes, colour
 | `src/render.js` | SVG drawing and export |
 | `src/highlight.js` | DBML syntax highlighting for the editor (coloured layer under a transparent textarea) |
 | `src/viewer.js` | pan, zoom, follow, tooltips and click to select; shared by the app and the embed |
-| `src/url.js` | GitHub, Gist and GitLab links → raw files |
+| `src/url.js` | GitHub, Gist and GitLab links → raw files; the `#dbml=` hash |
 | `src/embed.js` | `<open-diagram>` web component and ```` ```dbml ```` block upgrade |
 | `src/app.js` | editor, table dragging, persistence, files, menus |
 
@@ -105,12 +129,13 @@ All visual decisions are in [`src/theme.js`](src/theme.js): fonts, sizes, colour
 
 ```bash
 npm install
-npm run build:vendor   # rebuild vendor/ from node_modules (only after upgrading a library)
+npm run build          # rebuild vendor/ and dist/ (after upgrading a library or changing the embed)
 npm test               # headless Chrome smoke test on examples/open-ledger.dbml
 npm test -- my.dbml    # same on another file
 ```
 
-`vendor/` is committed so the app runs without `npm install`. The `@dbml/core` bundle leaves out
+`vendor/` and `dist/` are committed so the app and the embed run without `npm install` or a build
+on GitHub Pages; `npm test` fails when `dist/` is older than `src/`. The `@dbml/core` bundle leaves out
 its SQL importers (ANTLR, ~34 MB), so it is ~0.6 MB: DBML is parsed, and SQL can be exported
 but not imported.
 
