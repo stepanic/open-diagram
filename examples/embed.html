@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Diagram embed</title>
+  <style>
+    body { max-width: 860px; margin: 32px auto; padding: 0 16px; font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1f2328; }
+    code { font-size: 14px; }
+    pre { padding: 12px; background: #f6f8fa; border-radius: 6px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Open Diagram embed</h1>
+  <p>Read-only diagrams in an ordinary page: drag to pan, ⌘/Ctrl + scroll or pinch to zoom, hover for
+    details, click a table to highlight its refs. The wheel scrolls the page as usual.</p>
+
+  <h2>Inline DBML</h2>
+  <open-diagram id="inline" height="320px" focus="posts.author_id">
+Table users [headercolor: #316896] {
+  id integer [pk, increment]
+  email varchar [unique, not null]
+  name varchar
+  Note: 'People who can sign in'
+}
+
+Table posts [headercolor: #0f766e] {
+  id integer [pk, increment]
+  author_id integer [not null, ref: > users.id, note: 'Who wrote it']
+  title varchar [not null]
+}
+
+Table comments [headercolor: #0f766e] {
+  id integer [pk, increment]
+  post_id integer [ref: > posts.id]
+  user_id integer [ref: > users.id]
+  body text
+}
+  </open-diagram>
+
+  <h2>From a URL, laid out left to right</h2>
+  <p><code>&lt;open-diagram src="open-ledger.dbml" algorithm="left-right" height="560px"&gt;</code>. Left-right
+    uses ELK, which is loaded only now.</p>
+  <open-diagram id="remote" src="open-ledger.dbml" algorithm="left-right" detail="keys" height="560px"></open-diagram>
+
+  <h2>A fenced <code>```dbml</code> block</h2>
+  <p>Markdown renders it as <code>&lt;pre&gt;&lt;code class="language-dbml"&gt;</code>; the script turns it into a diagram.</p>
+  <pre><code class="language-dbml">Table orders {
+  id int [pk]
+  customer_id int [ref: > customers.id]
+}
+Table customers {
+  id int [pk]
+  name varchar
+}</code></pre>
+
+  <h2>An error</h2>
+  <open-diagram id="broken" height="120px">Table x { id int [pk </open-diagram>
+
+  <script src="../vendor/dbml-core.js"></script>
+  <script src="../src/theme.js"></script>
+  <script src="../src/model.js"></script>
+  <script src="../src/geometry.js"></script>
+  <script src="../src/layout.js"></script>
+  <script src="../src/render.js"></script>
+  <script src="../src/viewer.js"></script>
+  <script src="../src/url.js"></script>
+  <script src="../src/embed.js"></script>
+</body>
+</html>
