@@ -375,6 +375,48 @@ if (extra.deps) {
 await page.keyboard.press('Escape');
 check('Escape clears the source mark', (await markedText()) === null);
 
+// ---- problems panel, text exports, suggested refs ------------------------------------
+const pr = await page.evaluate(() => ({
+  hidden: document.querySelector('#problems').hidden,
+  head: document.querySelector('.pr-toggle').textContent,
+  items: [...document.querySelectorAll('#problem-list li')].map((li) => li.textContent),
+  lint: OD.lint(OD.app.state.fullModel).length,
+}));
+check('problems panel lists the lint results', !pr.hidden ? pr.items.length >= pr.lint : pr.lint === 0, pr.head);
+if (pr.items.length) {
+  await page.click('#problem-list li');
+  const sel = await page.evaluate(() => {
+    const e = document.querySelector('#editor');
+    return { active: document.activeElement.id, line: e.value.slice(0, e.selectionStart).split('\n').length };
+  });
+  check('click on a problem selects its line', sel.active === 'editor' && sel.line > 1, `line ${sel.line}`);
+}
+
+const textOf = async (kind) => {
+  await page.click('[data-action="export-menu"]');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click(`[data-export="${kind}"]`)]);
+  return { name: dl.suggestedFilename(), text: readFileSync(await dl.path(), 'utf8') };
+};
+const mmd = await textOf('mermaid');
+const relCount = (mmd.text.match(/ [}|][o|]--[o|][|{] /g) || []).length;
+check('Mermaid export has every table and ref', mmd.text.startsWith('erDiagram') && relCount === info.refs && (mmd.text.match(/ \{$/gm) || []).length === info.tables, `${mmd.name}: ${relCount} relationships`);
+const doc = await textOf('markdown');
+check('Markdown export documents every table', doc.text.includes('```mermaid') && (doc.text.match(/^### /gm) || []).length >= info.tables, `${doc.name}: ${doc.text.split('\n').length} lines`);
+const sql = await textOf('postgres');
+check('PostgreSQL export creates every table', (sql.text.match(/CREATE TABLE/g) || []).length === info.tables, sql.name);
+
+// A schema with no FKs: the panel suggests them, the button appends them, the diagram draws them.
+await page.evaluate(() => OD.app.openText('suggest.dbml', 'Table users {\n  id int [pk]\n}\nTable categories {\n  id int [pk]\n}\nTable posts {\n  id int [pk]\n  user_id int\n  category_id int\n}\n'));
+await page.waitForTimeout(300);
+const sug = await page.evaluate(() => ({ items: document.querySelectorAll('#problem-list li.suggest').length, button: document.querySelector('.pr-suggest').textContent }));
+await page.click('.pr-suggest');
+await page.waitForTimeout(500);
+const added = await page.evaluate(() => ({ refs: OD.app.state.model.refs.length, left: document.querySelectorAll('#problem-list li.suggest').length, tail: document.querySelector('#editor').value.trim().split('\n').slice(-2) }));
+check('suggested refs are appended and drawn', sug.items === 2 && added.refs === 2 && added.left === 0, `${sug.button} → ${added.tail.join(' | ')}`);
+await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+await page.waitForTimeout(500);
+check('undo removes the suggested refs', (await page.evaluate(() => OD.app.state.model.refs.length)) === 0);
+
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
 
