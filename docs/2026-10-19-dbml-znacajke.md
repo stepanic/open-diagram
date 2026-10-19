@@ -228,3 +228,16 @@ Markdown (`src/export.js`) te SQL izvoz (`ModelExporter` iz `@dbml/core`, bundle
 Što parser 10.x već sam odbija, pa lint to ne ponavlja: duplicirana tablica, stupac i ref,
 prazan enum, ref na nepostojeći stupac. SQL **uvoz** nije dodan: treba ANTLR parsere (~34 MB).
 Mermaid izvoz provjeren na open-ledgeru s Mermaidom 11 (parse i render bez greške).
+
+Mjerenja i zamke iz te sesije:
+
+- Na open-ledgeru lint daje 0 upozorenja i 32 bilješke, od toga 29 „FK bez indeksa": tamo
+  indeksi počinju s `ledger` (`(ledger, wallet, …)`), pa `wallet` nije vodeći stupac. Za
+  Postgres je to točno, ali je bučno; ako zasmeta, kandidat za prekidač.
+- Prijedlog refova po golom imenu ključa (`luid` → tablica s PK `luid`) bez ograničenja dao je
+  38 lažnih prijedloga na open-ledgeru, jer 20-ak tablica ima PK `luid`. Sad se golo ime
+  uzima samo kad ga točno jedna tablica ima kao ključ.
+- Mermaid se ne provjerava u `npm test` (nije ovisnost). Ručna provjera: `npm i mermaid@11` u
+  privremeni direktorij, pa u Playwrightu (`channel: 'chrome'`) `mermaid.render()` na izvozu;
+  pri grešci baca iznimku s „Parse error", što je provjereno na namjerno pokvarenom ulazu.
+- Prazan `indexes { }` parser tiho proguta (nema elementa ni tokena), pa ga lint ne može javiti.
