@@ -40,6 +40,18 @@
     <div class="group">
       <button data-action="export-svg">SVG</button>
       <button data-action="export-png">PNG</button>
+      <span class="menu-anchor">
+        <button data-action="export-menu" title="Mermaid, Markdown documentation, SQL">Export ▾</button>
+        <div id="export-menu" class="layout-menu text-menu" role="menu" hidden>
+          <button data-export="mermaid"><span class="lm-name">Mermaid erDiagram</span><span class="lm-desc">.mmd file, and a fenced block on the clipboard for a README</span></button>
+          <button data-export="markdown"><span class="lm-name">Markdown documentation</span><span class="lm-desc">Project note, Mermaid diagram, every table with fields, indexes and refs, enums</span></button>
+          <div class="lm-title">SQL (whole model)</div>
+          <button data-export="postgres"><span class="lm-name">PostgreSQL</span></button>
+          <button data-export="mysql"><span class="lm-name">MySQL</span></button>
+          <button data-export="mssql"><span class="lm-name">SQL Server</span></button>
+          <button data-export="oracle"><span class="lm-name">Oracle</span></button>
+        </div>
+      </span>
       <button data-action="save-layout" title="Download table positions">Layout</button>
     </div>
     <input id="file-input" type="file" accept=".dbml,.txt,.json" hidden>
@@ -63,6 +75,13 @@
           <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </div>
       </div>
+      <div id="problems" class="problems" hidden>
+        <div class="pr-head">
+          <button class="pr-toggle" data-action="toggle-problems" title="Show / hide problems"></button>
+          <button class="pr-suggest" data-action="add-suggested-refs" title="Append the refs that column names suggest, for review" hidden></button>
+        </div>
+        <ul id="problem-list" class="pr-list"></ul>
+      </div>
       <div id="status"></div>
     </section>
     <div id="splitter" class="splitter"></div>
@@ -81,6 +100,8 @@
   <script src="vendor/elk.bundled.js"></script>
   <script src="src/theme.js"></script>
   <script src="src/model.js"></script>
+  <script src="src/lint.js"></script>
+  <script src="src/export.js"></script>
   <script src="src/geometry.js"></script>
   <script src="src/layout.js"></script>
   <script src="src/highlight.js"></script>

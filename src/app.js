@@ -96,11 +96,12 @@ TableGroup content [color: #0f766e] {
   // ---- editor ------------------------------------------------------------------------
 
   let errorLines = new Set();
+  let warnLines = new Set();
 
   function renderGutter() {
     const count = editor.value.split('\n').length;
     let html = '';
-    for (let i = 1; i <= count; i++) html += `<div${errorLines.has(i) ? ' class="err"' : ''}>${i}</div>`;
+    for (let i = 1; i <= count; i++) html += `<div${errorLines.has(i) ? ' class="err"' : warnLines.has(i) ? ' class="warn"' : ''}>${i}</div>`;
     gutter.innerHTML = html;
     syncScroll();
   }
@@ -324,6 +325,7 @@ TableGroup content [color: #0f766e] {
     } catch (err) {
       const errors = OD.formatErrors(err);
       errorLines = new Set(errors.map((e) => e.line).filter(Boolean));
+      renderProblems(null);
       renderGutter();
       const first = errors[0];
       setStatus(`${first.line ? `Line ${first.line}: ` : ''}${first.message}${errors.length > 1 ? `  (+${errors.length - 1} more)` : ''}`, 'error');
@@ -331,6 +333,7 @@ TableGroup content [color: #0f766e] {
       return;
     }
     errorLines = new Set();
+    renderProblems(model);
     renderGutter();
     statusEl.onclick = null;
     renderViewMenu();
@@ -349,6 +352,59 @@ TableGroup content [color: #0f766e] {
     if (m.notes.length) parts.push(`${m.notes.length} notes`);
     if (state.viewName) parts.push(`view ${state.viewName}`);
     setStatus(parts.join(' · '));
+  }
+
+  // ---- problems panel ----------------------------------------------------------------
+
+  const problemsEl = $('#problems');
+  const problemList = $('#problem-list');
+  let suggestions = [];
+
+  function renderProblems(model) {
+    const problems = model ? OD.lint(model) : [];
+    suggestions = model ? OD.suggestRefs(model) : [];
+    const lineOf = (s) => model.tableByKey.get(s.from.table).fieldByName.get(s.from.field).line;
+    const items = [
+      ...problems,
+      ...suggestions.map((s) => ({ level: 'suggest', message: `${s.from.table}.${s.from.field} looks like a ref to ${s.to.table}.${s.to.field}`, line: lineOf(s) })),
+    ];
+    warnLines = new Set(problems.filter((p) => p.level === 'warning').map((p) => p.line).filter(Boolean));
+    problemsEl.hidden = !items.length;
+    problemsEl.classList.toggle('collapsed', !store.get('problemsOpen', true));
+    const count = (level, one, many) => {
+      const n = items.filter((i) => i.level === level).length;
+      return n ? `${n} ${n === 1 ? one : many}` : null;
+    };
+    $('.pr-toggle').textContent = `Problems: ${[count('warning', 'warning', 'warnings'), count('info', 'note', 'notes'), count('suggest', 'suggested ref', 'suggested refs')].filter(Boolean).join(' · ')}`;
+    const add = $('.pr-suggest');
+    add.hidden = !suggestions.length;
+    add.textContent = `Add ${suggestions.length} ref${suggestions.length === 1 ? '' : 's'}`;
+    problemList.replaceChildren(...items.map((p) => {
+      const li = document.createElement('li');
+      li.className = p.level;
+      li.textContent = p.message;
+      if (p.line) {
+        const n = document.createElement('span');
+        n.className = 'pr-line';
+        n.textContent = p.line;
+        li.prepend(n);
+        li.addEventListener('click', () => jumpToLine(p.line));
+      }
+      return li;
+    }));
+  }
+
+  // Appends the suggested refs at the end of the source, as an undoable edit, for review.
+  function addSuggestedRefs() {
+    if (!suggestions.length) return;
+    const text = `${editor.value.endsWith('\n') ? '' : '\n'}\n// Suggested from column names: keep, fix or delete\n${suggestions.map((s) => `${s.dbml} // suggested`).join('\n')}\n`;
+    editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
+    if (!document.execCommand('insertText', false, text)) {
+      editor.value += text;
+      editor.dispatchEvent(new Event('input'));
+    }
+    editor.scrollTop = editor.scrollHeight;
   }
 
   // Each DiagramView keeps its own layout, so a view can be arranged on its own.
@@ -769,6 +825,11 @@ TableGroup content [color: #0f766e] {
     'export-png': () => exportPng(),
     'save-layout': () => download(`${baseName()}.layout.json`, new Blob([JSON.stringify({ positions: Object.fromEntries(state.positions) }, null, 2)], { type: 'application/json' })),
     'auto-layout': () => toggleLayoutMenu(),
+    'export-menu': () => (exportMenu.hidden = !exportMenu.hidden),
+    'toggle-problems': () => {
+      store.set('problemsOpen', problemsEl.classList.toggle('collapsed') === false);
+    },
+    'add-suggested-refs': addSuggestedRefs,
     fit,
     'zoom-in': () => zoomCenter(1.2),
     'zoom-out': () => zoomCenter(1 / 1.2),
@@ -797,6 +858,36 @@ TableGroup content [color: #0f766e] {
     store.set('detail', state.detail);
     applyModel(state.model);
   });
+
+  // Text exports. Mermaid and Markdown follow the current DiagramView, like SVG and PNG; SQL is
+  // generated from the whole source by @dbml/core.
+  const exportMenu = $('#export-menu');
+  const SQL_NAMES = { postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server', oracle: 'Oracle' };
+  async function exportAs(kind) {
+    exportMenu.hidden = true;
+    const name = `${baseName()}${state.viewName ? `.${state.viewName}` : ''}`;
+    try {
+      if (kind === 'mermaid') {
+        const text = OD.toMermaid(state.model);
+        download(`${name}.mmd`, new Blob([text], { type: 'text/plain' }));
+        try {
+          await navigator.clipboard.writeText(`\`\`\`mermaid\n${text}\`\`\`\n`);
+          setStatus(`Saved ${name}.mmd; a \`\`\`mermaid block is on the clipboard`);
+        } catch {
+          setStatus(`Saved ${name}.mmd`);
+        }
+      } else if (kind === 'markdown') {
+        download(`${name}.md`, new Blob([OD.toMarkdown(state.model, baseName())], { type: 'text/markdown' }));
+      } else {
+        const db = window.dbmlCore.Parser.parse(state.source, 'dbmlv2');
+        download(`${baseName()}.${kind}.sql`, new Blob([window.dbmlCore.ModelExporter.export(db, kind)], { type: 'text/plain' }));
+        setStatus(`Saved ${baseName()}.${kind}.sql (${SQL_NAMES[kind]})`);
+      }
+    } catch (err) {
+      setStatus(`Export failed: ${OD.formatErrors(err)[0].message}`, 'error');
+    }
+  }
+  exportMenu.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
 
   // DiagramView picker: shown only when the DBML has views.
   const viewSelect = $('#view');
@@ -873,6 +964,7 @@ TableGroup content [color: #0f766e] {
   }
   document.addEventListener('pointerdown', (e) => {
     if (!layoutMenu.hidden && !e.target.closest('#layout-menu, [data-action="auto-layout"]')) toggleLayoutMenu(false);
+    if (!exportMenu.hidden && !e.target.closest('#export-menu, [data-action="export-menu"]')) exportMenu.hidden = true;
   }, true);
 
   window.addEventListener('dragover', (e) => e.preventDefault());
@@ -908,6 +1000,7 @@ TableGroup content [color: #0f766e] {
     else if (e.key === '+' || e.key === '=') zoomCenter(1.2);
     else if (e.key === '-') zoomCenter(1 / 1.2);
     else if (e.key === 'Escape') {
+      exportMenu.hidden = true;
       clearFocus();
       markSourceLine(0);
       renderer.setSelected(null);
