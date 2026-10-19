@@ -19,6 +19,13 @@ Open Diagram uses the current parser and draws everything with its own SVG rende
 Open `index.html` directly (`file://` works).
 
 - **Open / Save**: load a `.dbml` (or a `.layout.json`), download the DBML. Drag and drop works too.
+- **URL ▾**: open a `.dbml` from a link and copy a link to share it. GitHub, Gist and GitLab file
+  links work as they are (they are read from the raw file); other servers have to allow
+  cross-origin requests. The same works in the address bar:
+  `https://stepanic.github.io/open-diagram/?url=https://github.com/owner/repo/blob/main/schema.dbml`,
+  optionally with `&view=<DiagramView>` and `&layout=<url of a .layout.json>`. Without `layout`, a
+  `.layout.json` next to the `.dbml` is used if there is one and this browser has not arranged the
+  file itself. Editing the text drops `?url=` from the address, so a reload keeps the edit.
 - **Drag** a table by any part of it; drag a TableGroup by its title to move the whole group.
 - **Scroll** pans, **pinch** or **⌘/Ctrl + scroll** zooms, **F** fits, **Esc** clears the selection.
 - **Click** a table to highlight its refs, **double-click** to jump to it in the editor.
