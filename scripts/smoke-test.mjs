@@ -318,7 +318,7 @@ if (focusInfo.ref) {
     await caretAt(needle);
     await page.waitForTimeout(250);
     return page.evaluate((k) => {
-      const { view } = OD.app.state;
+      const { view } = OD.app.viewer;
       const b = OD.app.renderer.box(k);
       const r = document.querySelector('#diagram').getBoundingClientRect();
       const cx = (b.x + b.w / 2) * view.k + view.x;
@@ -498,6 +498,60 @@ const r3 = await remote.evaluate(() => ({ status: document.querySelector('#statu
 check('a URL that fails shows an error and keeps the last document', r3.cls === 'error' && /HTTP 404/.test(r3.status) && r3.tables > 0, r3.status);
 check('no page errors while opening URLs', remoteErrors.length === 0, remoteErrors.join(' | '));
 await remote.close();
+
+// Read-only embed: examples/embed.html over a fake origin, so src= can fetch a file next to it.
+const embed = await context.newPage();
+const embedErrors = [];
+const elkLoads = [];
+embed.on('pageerror', (e) => embedErrors.push(String(e)));
+embed.on('console', (m) => m.type() === 'error' && embedErrors.push(m.text()));
+await embed.route('http://embed.test/**', (route) => {
+  const rel = decodeURIComponent(new URL(route.request().url()).pathname).slice(1);
+  if (rel.endsWith('elk.bundled.js')) elkLoads.push(rel);
+  route.fulfill({ path: path.join(root, rel) });
+});
+const embedState = () => embed.evaluate(() => [...document.querySelectorAll('open-diagram')].map((e) => ({
+  id: e.id,
+  tables: e.shadowRoot.querySelectorAll('.od-table').length,
+  message: e.shadowRoot.querySelector('.message').hidden ? '' : e.shadowRoot.querySelector('.message').textContent,
+  focus: e.shadowRoot.querySelector('svg').classList.contains('od-focus'),
+})));
+// The same page without its ELK-hungry diagram: compact layout must not fetch ELK.
+await embed.route('http://embed.test/examples/compact.html', async (route) => {
+  const html = readFileSync(path.join(root, 'examples/embed.html'), 'utf8').replace(/<open-diagram id="remote"[^>]*><\/open-diagram>/, '');
+  route.fulfill({ contentType: 'text/html', body: html });
+});
+await embed.goto('http://embed.test/examples/compact.html');
+await embed.waitForFunction(() => document.querySelectorAll('open-diagram').length === 3 && [...document.querySelectorAll('open-diagram')].every((e) => e.shadowRoot.querySelector('.od-table') || !e.shadowRoot.querySelector('.message').hidden), null, { timeout: 5000 }).catch(() => {});
+check('embed with compact layouts does not load ELK', elkLoads.length === 0 && (await embed.evaluate(() => !window.ELK)), elkLoads.join(', '));
+await embed.goto('http://embed.test/examples/embed.html');
+await embed.waitForFunction(() => {
+  const r = document.querySelector('#remote');
+  return r && r.shadowRoot.querySelectorAll('.od-table').length > 5;
+}, null, { timeout: 8000 }).catch(() => {});
+const es = await embedState();
+const byId = (id) => es.find((e) => e.id === id) || {};
+check('inline <open-diagram> renders and focuses posts.author_id', byId('inline').tables === 3 && byId('inline').focus, JSON.stringify(byId('inline')));
+check('src= loads the file, left-right loads ELK lazily', byId('remote').tables > 5 && elkLoads.length === 1, `${byId('remote').tables} tables, ELK ${elkLoads.length}×`);
+check('```dbml block becomes a diagram', (await embed.locator('pre code.language-dbml').count()) === 0 && es.some((e) => !e.id && e.tables === 2), JSON.stringify(es.map((e) => e.tables)));
+check('broken DBML shows the parse error', /^Line 1:/.test(byId('broken').message), byId('broken').message);
+const row = embed.locator('#inline').locator('.od-row[data-key="posts"][data-field="author_id"]');
+await row.hover();
+const embedTip = await embed.evaluate(() => {
+  const t = document.querySelector('#inline').shadowRoot.querySelector('.tooltip');
+  return t.hidden ? '' : t.textContent;
+});
+check('embed tooltip shows the field note', embedTip.includes('Who wrote it'), embedTip.trim().replace(/\s+/g, ' ').slice(0, 80));
+const scrolled = await embed.evaluate(async () => {
+  const el = document.querySelector('#remote');
+  const before = { ...el.viewer.view };
+  el.shadowRoot.querySelector('svg').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }));
+  return { panned: el.viewer.view.y !== before.y };
+});
+check('plain wheel over an embed leaves the view alone (page scrolls)', !scrolled.panned, JSON.stringify(scrolled));
+check('no errors on the embed page', embedErrors.length === 0, embedErrors.join(' | '));
+await embed.screenshot({ path: path.join(outDir, 'embed.png'), fullPage: true });
+await embed.close();
 
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
