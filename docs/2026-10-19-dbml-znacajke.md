@@ -17,7 +17,7 @@ Legenda: ✅ prikazano · 🟡 djelomično · ❌ parsira se, ali se ne prikazuj
 | --- | --- | --- |
 | Komentari | `// red`, `/* blok */` | ✅ (highlight) |
 | String | `'tekst'`, escape `\'` i `\\` | ✅ |
-| Višeredni string | `'''…'''`; zajednička uvlaka se skida, `\` na kraju retka spaja redove | 🟡 bilješke se prikažu kao čisti tekst |
+| Višeredni string | `'''…'''`; zajednička uvlaka se skida, `\` na kraju retka spaja redove | 🟡 Markdown u tooltipovima i panelu projekta; sticky bilješke na platnu su čisti tekst |
 | Navodnici za imena | `"column name"`, `"double precision"` | ✅ |
 | Izraz | `` `now()` `` | ✅ |
 | Ključne riječi | ne razlikuju velika/mala slova (`Table` = `table`) | ✅ |
@@ -44,16 +44,16 @@ Table core.users as U [headercolor: #3498DB, owner: "data-team"] {
 
 | Značajka | Detalj | Open Diagram |
 | --- | --- | --- |
-| `Project` | `database_type`, `Note` (Markdown u višerednom stringu) | ❌ bilješka projekta se nigdje ne vidi |
+| `Project` | `database_type`, `Note` (Markdown u višerednom stringu) | ✅ gumb **Project** (tipka P) otvara panel s Markdownom |
 | Shema | `schema.table`; bez sheme je `public` | ✅ ime `schema.table` |
 | Alias | `Table x as X`, pa `Ref: X.id …` | ✅ tooltip |
 | `headercolor` | `#rgb` ili `#rrggbb` | ✅ |
 | Postavke stupca | `pk` / `primary key`, `null` / `not null`, `unique`, `increment`, `default:`, `note:` | ✅ ikone, NN, tooltip |
 | `default` | broj, `'string'`, `` `izraz` ``, `true/false/null` | ✅ tooltip |
-| `check` na stupcu | `` [check: `expr`] ``, može ih biti više | ❌ |
-| `checks { }` blok | `` checks { `a + b >= 0` [name: 'chk'] } `` | ❌ |
-| Custom svojstva | `[owner: "data-team"]` na Table, Column, TableGroup, sticky Note | ❌ |
-| `Metadata` blok | `Metadata Table users { owner: 'x' }`, `Metadata Column users.id { pii: 'true' }`; ima prednost pred inline svojstvima | ❌ |
+| `check` na stupcu | `` [check: `expr`] ``, može ih biti više | ✅ tooltip polja |
+| `checks { }` blok | `` checks { `a + b >= 0` [name: 'chk'] } `` | ✅ tooltip tablice (ime + izraz) |
+| Custom svojstva | `[owner: "data-team"]` na Table, Column, TableGroup, sticky Note | ✅ tooltip (tablica, polje, grupa, Dep); sticky Note ❌ |
+| `Metadata` blok | `Metadata Table users { owner: 'x' }`, `Metadata Column users.id { pii: 'true' }`; ima prednost pred inline svojstvima | ✅ isto kao custom svojstva (parser ih spaja u `metadata`) |
 
 ## 3. Indeksi
 
@@ -67,8 +67,8 @@ indexes {
 ```
 
 Postavke: `type` (`btree`, `hash`), `name`, `unique`, `pk`, `note`.
-Open Diagram: 🟡 kompozitni `pk` i jednostupčani `unique` označe polja, a tooltip tablice ispiše
-popis stupaca. `name`, `type`, `note` i indeksi s izrazima se ne prikazuju.
+Open Diagram: ✅ kompozitni `pk` i jednostupčani `unique` označe polja, a tooltip tablice ispiše
+svaki indeks s imenom, stupcima/izrazima, `type` i `note`.
 
 ## 4. Relacije (`Ref`)
 
@@ -83,10 +83,10 @@ user_id int [ref: > users.id]               // inline: bez imena i postavki
 | Značajka | Detalj | Open Diagram |
 | --- | --- | --- |
 | Operatori | `<` 1–N, `>` N–1, `-` 1–1, `<>` N–N | ✅ |
-| Opcionalna strana | `>?`, `?>` … (parser daje relaciju `0..1`) | ❌ crta se kao obična `1` |
+| Opcionalna strana | `>?`, `?>` … (parser daje relaciju `0..1`) | ✅ prazan krug uz crticu na `0..1` kraju, `0..1` u tooltipu |
 | `delete` / `update` | `cascade`, `restrict`, `set null`, `set default`, `no action` | ✅ tooltip |
 | `color` | boja linije | ✅ |
-| `inactive` | „neaktivna" veza, dbdiagram je crta točkasto | ❌ crta se kao puna |
+| `inactive` | „neaktivna" veza, dbdiagram je crta točkasto | ✅ točkasta linija (`theme.ref.inactiveDash`) |
 | 1–1 smjer | u long/short formi FK je drugi stupac; inline je FK stupac s `ref` | ✅ |
 
 ## 5. Enumi
@@ -138,8 +138,8 @@ Table wallets {
 ```
 
 Lokalna definicija stupca ima prednost pred partialom, a od više partiala pobjeđuje zadnji.
-Open Diagram: ✅ parser ubaci stupce, pa ih crtež vidi kao obične. Ne označava se koji je
-stupac došao iz partiala (`field.injectedPartial` postoji u parseru).
+Open Diagram: ✅ parser ubaci stupce, pa ih crtež vidi kao obične; tooltip polja kaže
+`from ~partial`. Na samom platnu se ne razlikuju.
 
 ## 8. Records (primjer podataka)
 
@@ -156,7 +156,7 @@ Table symbols {
 
 Vrijednosti: stringovi, brojevi, `true/false` (i `'Y'/'N'`, `1/0`), `null`, datumi kao
 string, enum `Status.active`, izrazi u backtickovima. Jedan `records` blok po tablici.
-Open Diagram: ❌ (`db.records[]` postoji).
+Open Diagram: ✅ tooltip zaglavlja tablice pokaže do 5 redaka i 6 stupaca.
 
 ## 9. DiagramView (pogledi)
 
@@ -169,7 +169,13 @@ DiagramView novac {
 DiagramView sve { Tables { * } }
 ```
 
-Kategorije: `Tables`, `Notes`, `TableGroups`, `Schemas`. Open Diagram: ❌ (`db.diagramViews[]`).
+Kategorije: `Tables`, `Notes`, `TableGroups`, `Schemas`. Open Diagram: ✅ izbornik pogleda u alatnoj traci
+(`OD.applyView`). Svaki pogled ima vlastiti raspored u localStorage (`positions:<doc>#<view>`).
+
+Zamka parsera: `Tables { * }` i nenavedena kategorija tablica oba dolaze kao `[]` čim je u pogledu
+navedena bilo koja druga kategorija tablica. Zato vrijedi: sve tri kategorije tablica prazne (`[]`)
+= sve tablice; sve `null` = nijedna; inače unija navedenog. `Tables { * }` uz `TableGroups { g }`
+se zato čita kao „samo g". Za bilješke je razlika jasna: `null` nijedna, `[]` sve.
 
 ## 10. Data lineage (`Dep`)
 
@@ -188,7 +194,10 @@ Dep order_staging [color: #79AD51] {
 ```
 
 Strelica uvijek ide od izvora prema izvedenom. Svi bridovi u bloku moraju završiti u istoj tablici.
-Open Diagram: ❌.
+Open Diagram: ✅ isprekidana linija s punom strelicom u izvedenu tablicu, boja iz `[color]` ili
+`theme.dep.color`; stupac → stupac se veže na red polja. Gumb **Lineage** (tipka L) ih skriva.
+Tooltip linije: ime bloka, krajevi, bilješka. Inline `[dep: …]` parser stavlja u isti `schema.deps`.
+Dep linije ne utječu na auto layout.
 
 ## 11. Moduli (više datoteka)
 
@@ -201,15 +210,13 @@ reuse * from './users'                    // proslijedi dalje onome tko uveze ov
 `use` nije tranzitivan, a kružni importi su dozvoljeni. Open Diagram: ❌, jer otvara jednu
 datoteku i nema pristup susjednim.
 
-## Što bi trebalo dodati u renderer (po vrijednosti)
+## Što je još otvoreno
 
-1. **`inactive` i opcionalni refovi**: točkasta linija, odnosno prazan krug na `0..1` kraju.
-   Malo posla u `geometry.js` / `render.js`.
-2. **Bilješka projekta** kao panel ili sticky na platnu, uz Markdown u svim bilješkama
-   (naslovi, liste, `code`).
-3. **`checks` i custom svojstva** u tooltipu tablice i polja. Za svojstva i oznaka na tablici
-   (npr. „pii").
-4. **DiagramView**: padajući izbornik koji prikaže samo tablice, grupe i bilješke iz pogleda.
-5. **`Dep` lineage**: druga vrsta linije (isprekidana, sa strelicom) između tablica ili stupaca.
-6. **Records**: tablica s primjerima u tooltipu ili panelu.
-7. Oznaka stupaca iz TablePartiala (npr. sivi tekst).
+Stavke 1–4 s popisa od 2026-10-19 (opcionalni/`inactive` refovi, `Dep`, `DiagramView`, bilješka
+projekta, `checks`, svojstva, records) napravljene su istog dana. Ostaje:
+
+1. Markdown na sticky bilješkama na platnu (SVG tekst, sad čisti tekst).
+2. Oznaka stupaca iz TablePartiala na samom platnu (npr. sivi tekst).
+3. Custom svojstva sticky bilješki i oznaka na tablici (npr. „pii").
+4. Enum kao vlastiti blok na platnu (sad samo u tooltipu polja).
+5. Moduli (`use`/`reuse`): nema pristupa susjednim datotekama.

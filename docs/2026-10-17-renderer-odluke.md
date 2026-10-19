@@ -108,3 +108,16 @@ trebalo bi bojati samo vidljivi dio.
 - **„Untitled" nakon otvaranja `index.html`**: aplikacija pokazuje ugrađeni SAMPLE ili zadnji izvor
   iz localStoragea, ne datoteku iz `examples/`. Datoteku treba učitati preko Open, drag & dropa ili
   `OD.app.openText(name, text)`.
+
+## 2026-10-19: Dep, DiagramView, Project i ostatak DBML-a
+
+Stanje po značajkama je u `docs/2026-10-19-dbml-znacajke.md`. Ovdje samo zamke:
+
+- **Lokalni server mora slati `Cache-Control: no-store`.** `python3 -m http.server` šalje samo
+  `Last-Modified`, pa je Brave nakon izmjene uzeo novi `app.js` i stari `model.js` iz cachea
+  (`renderViewMenu` je pao na `views` koji ne postoji). Mali handler koji dodaje `no-store` to
+  rješava; i tada nakon izmjene treba Cmd+Shift+R.
+- **Test hovera na liniju**: sredina bounding boxa putanje je obično prazno platno. Test uzima
+  `getPointAtLength(len / 2)` i preračuna ga s `getScreenCTM()`.
+- `OD.applyView` vraća novi model (podskup tablica, refova, depova, grupa, bilježaka), pa layout,
+  crtanje i izvoz ne znaju za poglede. Puni model je u `state.fullModel`.
