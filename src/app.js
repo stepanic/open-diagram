@@ -76,6 +76,7 @@ TableGroup content [color: #0f766e] {
     detail: store.get('detail', 'all'),
     algorithm: store.get('layoutAlgorithm', 'left-right'),
     showDeps: store.get('showDeps', true),
+    follow: store.get('follow', false), // zoom to the element under the editor caret
     viewName: null, // DiagramView currently shown, null = whole model
     fullModel: null, // model before the DiagramView filter
     model: null,
@@ -285,7 +286,9 @@ TableGroup content [color: #0f766e] {
     if (!state.fullModel || !state.model) return;
     const el = OD.elementAtLine(state.fullModel, line);
     renderer.setFocus(OD.focusFor(state.model, el));
-    if (reveal) revealFocus();
+    if (!reveal) return;
+    if (state.follow) scheduleFollow(el);
+    else revealFocus();
   }
 
   function clearFocus() {
@@ -459,6 +462,7 @@ TableGroup content [color: #0f766e] {
   function fit() {
     const bb = renderer.contentBox();
     if (!bb) return;
+    pauseFollow(); // also stops a reveal animation that would overwrite the fit
     const r = svg.getBoundingClientRect();
     const pad = 40;
     const k = Math.min(2, Math.max(0.1, Math.min((r.width - pad * 2) / bb.w, (r.height - pad * 2) / bb.h)));
@@ -468,6 +472,7 @@ TableGroup content [color: #0f766e] {
 
   function zoomAt(factor, cx, cy) {
     const v = state.view;
+    pauseFollow();
     const k = Math.min(4, Math.max(0.05, v.k * factor));
     state.view = { k, x: cx - ((cx - v.x) * k) / v.k, y: cy - ((cy - v.y) * k) / v.k };
     applyView();
@@ -485,7 +490,10 @@ TableGroup content [color: #0f766e] {
     const sy = bb.y * k + y;
     if (sx >= pad && sy >= pad && sx + bb.w * k <= r.width - pad && sy + bb.h * k <= r.height - pad) return;
     const nk = Math.max(0.1, Math.min(k, (r.width - pad * 2) / bb.w, (r.height - pad * 2) / bb.h));
-    const to = { k: nk, x: r.width / 2 - (bb.x + bb.w / 2) * nk, y: r.height / 2 - (bb.y + bb.h / 2) * nk };
+    animateView({ k: nk, x: r.width / 2 - (bb.x + bb.w / 2) * nk, y: r.height / 2 - (bb.y + bb.h / 2) * nk });
+  }
+
+  function animateView(to) {
     const from = { ...state.view };
     const t0 = performance.now();
     cancelAnimationFrame(viewAnim);
@@ -499,6 +507,85 @@ TableGroup content [color: #0f766e] {
     viewAnim = requestAnimationFrame(step);
   }
 
+  // ---- follow: zoom to the element under the caret -----------------------------------
+  // Fits the element itself, not everything it refs (a field's focus spans every table it
+  // points to), at a readable zoom. Moving within the same table only pans if the row
+  // leaves the screen. A manual pan or zoom pauses following until the caret reaches
+  // another element.
+
+  const FOLLOW_ZOOM = [0.5, 1.25];
+  let followKey = null;
+  let followPaused = false;
+  let followTimer = 0;
+
+  function scheduleFollow(el) {
+    clearTimeout(followTimer);
+    followTimer = setTimeout(() => follow(el), 150);
+  }
+
+  // { key, box, cy }: what to fit, and for a field the row to keep centred.
+  function followTarget(el) {
+    const m = state.model;
+    if (!el || !m) return null;
+    const boxOf = (key) => renderer.box(key);
+    switch (el.kind) {
+      case 'table':
+      case 'note':
+        return { key: `t:${el.key}`, box: boxOf(el.key) };
+      case 'field': {
+        const box = boxOf(el.key);
+        const t = m.tableByKey.get(el.key);
+        return box && t && { key: `t:${el.key}`, box, cy: OD.geometry.anchorY(t, box, el.field, renderer.detail) };
+      }
+      case 'ref': {
+        const r = m.refs.find((x) => x.id === el.id);
+        return r && { key: `r:${el.id}`, box: OD.geometry.bbox([boxOf(r.from.table), boxOf(r.to.table)].filter(Boolean), 0) };
+      }
+      case 'group':
+        return { key: `g:${el.key}`, box: renderer.groupBoxes && renderer.groupBoxes.get(el.key) };
+      default:
+        return { key: `${el.kind}:${el.key || el.name || (el.ids || []).join()}`, box: renderer.focusBox() };
+    }
+  }
+
+  function follow(el) {
+    const target = followTarget(el);
+    if (!target || !target.box) return;
+    const r = svg.getBoundingClientRect();
+    const pad = 40;
+    const { box, cy } = target;
+    if (target.key === followKey) {
+      if (followPaused || cy === undefined) return;
+      const { k, x, y } = state.view;
+      const sy = cy * k + y;
+      if (sy < pad || sy > r.height - pad) animateView({ k, x, y: r.height / 2 - cy * k });
+      return;
+    }
+    followKey = target.key;
+    followPaused = false;
+    const fitK = Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h);
+    const k = Math.min(FOLLOW_ZOOM[1], Math.max(FOLLOW_ZOOM[0], fitK));
+    let y = r.height / 2 - (box.y + box.h / 2) * k;
+    if (box.h * k > r.height - pad * 2) y = cy !== undefined ? r.height / 2 - cy * k : pad - box.y * k;
+    animateView({ k, x: r.width / 2 - (box.x + box.w / 2) * k, y });
+  }
+
+  function pauseFollow() {
+    cancelAnimationFrame(viewAnim);
+    clearTimeout(followTimer);
+    followPaused = true;
+  }
+
+  const followButton = $('[data-action="toggle-follow"]');
+  function setFollow(on) {
+    state.follow = on;
+    store.set('follow', on);
+    followButton.setAttribute('aria-pressed', String(on));
+    followKey = null;
+    followPaused = false;
+    if (on && focusedLine && state.fullModel) follow(OD.elementAtLine(state.fullModel, focusedLine));
+  }
+
   function zoomCenter(factor) {
     const r = svg.getBoundingClientRect();
     zoomAt(factor, r.width / 2, r.height / 2);
@@ -509,6 +596,7 @@ TableGroup content [color: #0f766e] {
     const r = svg.getBoundingClientRect();
     if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
     else {
+      pauseFollow();
       state.view.x -= e.deltaX;
       state.view.y -= e.deltaY;
       applyView();
@@ -549,6 +637,7 @@ TableGroup content [color: #0f766e] {
     drag.moved = true;
     svg.classList.add('dragging');
     if (drag.kind === 'pan') {
+      pauseFollow();
       state.view.x = drag.origin.x + dx;
       state.view.y = drag.origin.y + dy;
       applyView();
@@ -834,6 +923,7 @@ TableGroup content [color: #0f766e] {
     'zoom-in': () => zoomCenter(1.2),
     'zoom-out': () => zoomCenter(1 / 1.2),
     'toggle-deps': () => setShowDeps(!state.showDeps),
+    'toggle-follow': () => setFollow(!state.follow),
     'toggle-project': () => {
       const panel = $('#project-panel');
       if (panel.hidden && !state.fullModel.project.note) return;
@@ -997,6 +1087,7 @@ TableGroup content [color: #0f766e] {
     } else if (e.key === 'f') fit();
     else if (e.key === 'l' && state.fullModel && state.fullModel.deps.length) actions['toggle-deps']();
     else if (e.key === 'p') actions['toggle-project']();
+    else if (e.key === 'z' && !mod) actions['toggle-follow']();
     else if (e.key === '+' || e.key === '=') zoomCenter(1.2);
     else if (e.key === '-') zoomCenter(1 / 1.2);
     else if (e.key === 'Escape') {
@@ -1031,6 +1122,7 @@ TableGroup content [color: #0f766e] {
   $('#doc-name').textContent = state.docName;
   state.viewName = store.get(`view:${state.docName}`, null);
   setShowDeps(state.showDeps);
+  followButton.setAttribute('aria-pressed', String(state.follow));
   editor.value = state.source;
   renderGutter();
   renderHighlight();
