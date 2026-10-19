@@ -50,6 +50,13 @@
       opacity: 0.85,
     },
 
+    focus: {
+      // What the editor cursor points at: everything else fades to dimOpacity.
+      color: '#f59e0b',
+      rowFill: '#fef3c7',
+      dimOpacity: 0.25,
+    },
+
     group: {
       padding: 22,
       labelHeight: 34,

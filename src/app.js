@@ -88,6 +88,7 @@ TableGroup content [color: #0f766e] {
   const editor = $('#editor');
   const gutter = $('#gutter');
   const highlight = $('#highlight');
+  const searchMarks = $('#search-marks');
   const statusEl = $('#status');
   const tooltip = $('#tooltip');
   const renderer = new OD.Renderer(svg);
@@ -114,6 +115,8 @@ TableGroup content [color: #0f766e] {
     gutter.scrollTop = editor.scrollTop;
     highlight.scrollTop = editor.scrollTop;
     highlight.scrollLeft = editor.scrollLeft;
+    searchMarks.scrollTop = editor.scrollTop;
+    searchMarks.scrollLeft = editor.scrollLeft;
   }
 
   function jumpToLine(line) {
@@ -130,6 +133,7 @@ TableGroup content [color: #0f766e] {
   editor.addEventListener('input', () => {
     renderGutter();
     renderHighlight();
+    if (!searchBar.hidden) runSearch({ jump: false });
     clearTimeout(parseTimer);
     parseTimer = setTimeout(() => {
       state.source = editor.value;
@@ -138,6 +142,141 @@ TableGroup content [color: #0f766e] {
     }, 300);
   });
   editor.addEventListener('scroll', syncScroll);
+
+  // ---- editor search (⌘F) -----------------------------------------------------------
+
+  const searchBar = $('#search');
+  const searchInput = $('#search-input');
+  const search = { matches: [], index: -1, length: 0 };
+
+  function openSearch() {
+    const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+    if (sel && !sel.includes('\n')) searchInput.value = sel;
+    searchBar.hidden = false;
+    searchInput.focus();
+    searchInput.select();
+    runSearch({ jump: true });
+  }
+
+  function closeSearch() {
+    const m = search.matches[search.index];
+    searchBar.hidden = true;
+    search.matches = [];
+    renderSearchMarks();
+    editor.focus();
+    if (m !== undefined) editor.setSelectionRange(m, m + search.length);
+  }
+
+  // Case-insensitive plain text. jump: move to the first match at or after the caret.
+  function runSearch({ jump }) {
+    const q = searchInput.value.toLowerCase();
+    const text = editor.value.toLowerCase();
+    search.matches = [];
+    search.length = q.length;
+    if (q) for (let i = text.indexOf(q); i >= 0; i = text.indexOf(q, i + q.length)) search.matches.push(i);
+    if (jump) {
+      const from = editor.selectionStart;
+      const next = search.matches.findIndex((m) => m >= from);
+      gotoMatch(next < 0 ? 0 : next);
+    } else {
+      search.index = Math.min(search.index, search.matches.length - 1);
+      renderSearchMarks();
+    }
+  }
+
+  function gotoMatch(i) {
+    const n = search.matches.length;
+    search.index = n ? (i + n) % n : -1;
+    renderSearchMarks();
+    if (!n) return;
+    const m = search.matches[search.index];
+    editor.setSelectionRange(m, m + search.length);
+    const before = editor.value.slice(0, m);
+    const line = before.split('\n').length;
+    const col = m - before.lastIndexOf('\n') - 1;
+    revealInEditor(line, col);
+    focusLine(line);
+  }
+
+  let charWidth = 0;
+  function revealInEditor(line, col) {
+    const lh = parseFloat(getComputedStyle(editor).lineHeight);
+    const top = (line - 1) * lh;
+    if (top < editor.scrollTop || top > editor.scrollTop + editor.clientHeight - lh * 3) editor.scrollTop = Math.max(0, top - editor.clientHeight / 3);
+    if (!charWidth) {
+      const ctx = document.createElement('canvas').getContext('2d');
+      ctx.font = getComputedStyle(editor).font;
+      charWidth = ctx.measureText('0').width;
+    }
+    const x = col * charWidth;
+    if (x < editor.scrollLeft || x > editor.scrollLeft + editor.clientWidth - 80) editor.scrollLeft = Math.max(0, x - editor.clientWidth / 3);
+    syncScroll();
+  }
+
+  function renderSearchMarks() {
+    const { matches, index, length } = search;
+    const text = editor.value;
+    searchBar.classList.toggle('none', !!searchInput.value && !matches.length);
+    $('#search-count').textContent = searchInput.value ? `${matches.length ? index + 1 : 0}/${matches.length}` : '';
+    if (searchBar.hidden || !matches.length) {
+      searchMarks.innerHTML = '';
+      return;
+    }
+    let html = '';
+    let at = 0;
+    matches.forEach((m, i) => {
+      html += `${esc(text.slice(at, m))}<mark${i === index ? ' class="cur"' : ''}>${esc(text.slice(m, m + length))}</mark>`;
+      at = m + length;
+    });
+    searchMarks.innerHTML = `${html}${esc(text.slice(at))}\n `;
+    syncScroll();
+  }
+
+  searchInput.addEventListener('input', () => runSearch({ jump: true }));
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      gotoMatch(search.index + (e.shiftKey ? -1 : 1));
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSearch();
+    }
+  });
+  searchBar.querySelectorAll('[data-search]').forEach((b) =>
+    b.addEventListener('click', () => {
+      if (b.dataset.search === 'close') closeSearch();
+      else gotoMatch(search.index + (b.dataset.search === 'prev' ? -1 : 1));
+    }),
+  );
+
+  // ---- editor cursor → diagram -------------------------------------------------------
+  // The element under the caret lights up on the canvas and scrolls into view.
+
+  let focusedLine = 0;
+  const caretLine = () => editor.value.slice(0, editor.selectionStart).split('\n').length;
+
+  function focusLine(line, { reveal = true } = {}) {
+    focusedLine = line;
+    if (!state.fullModel || !state.model) return;
+    const el = OD.elementAtLine(state.fullModel, line);
+    renderer.setFocus(OD.focusFor(state.model, el));
+    if (reveal) revealFocus();
+  }
+
+  function clearFocus() {
+    focusedLine = 0;
+    renderer.setFocus(null);
+  }
+
+  let caretFrame = 0;
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement !== editor) return;
+    cancelAnimationFrame(caretFrame);
+    caretFrame = requestAnimationFrame(() => {
+      const line = caretLine();
+      if (line !== focusedLine) focusLine(line);
+    });
+  });
   editor.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
@@ -174,6 +313,7 @@ TableGroup content [color: #0f766e] {
     if (state.viewName && !model.views.some((v) => v.name === state.viewName)) setView(null, { apply: false });
     await applyModel(OD.applyView(model, state.viewName));
     showStatus();
+    if (focusedLine) focusLine(focusedLine, { reveal: false });
   }
 
   function showStatus() {
@@ -252,6 +392,32 @@ TableGroup content [color: #0f766e] {
     applyView();
   }
 
+  // Pan (and zoom out if needed) so the focused elements are on screen; animated.
+  let viewAnim = 0;
+  function revealFocus() {
+    const bb = renderer.focusBox();
+    if (!bb) return;
+    const r = svg.getBoundingClientRect();
+    const { x, y, k } = state.view;
+    const pad = 30;
+    const sx = bb.x * k + x;
+    const sy = bb.y * k + y;
+    if (sx >= pad && sy >= pad && sx + bb.w * k <= r.width - pad && sy + bb.h * k <= r.height - pad) return;
+    const nk = Math.max(0.1, Math.min(k, (r.width - pad * 2) / bb.w, (r.height - pad * 2) / bb.h));
+    const to = { k: nk, x: r.width / 2 - (bb.x + bb.w / 2) * nk, y: r.height / 2 - (bb.y + bb.h / 2) * nk };
+    const from = { ...state.view };
+    const t0 = performance.now();
+    cancelAnimationFrame(viewAnim);
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / 220);
+      const e = 1 - (1 - t) ** 3;
+      state.view = { k: from.k + (to.k - from.k) * e, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+      applyView();
+      if (t < 1) viewAnim = requestAnimationFrame(step);
+    };
+    viewAnim = requestAnimationFrame(step);
+  }
+
   function zoomCenter(factor) {
     const r = svg.getBoundingClientRect();
     zoomAt(factor, r.width / 2, r.height / 2);
@@ -319,7 +485,10 @@ TableGroup content [color: #0f766e] {
     if (!drag) return;
     svg.classList.remove('dragging');
     if (drag.kind === 'nodes' && drag.moved) savePositions();
-    if (!drag.moved) renderer.setSelected(drag.clickKey || null);
+    if (!drag.moved) {
+      clearFocus();
+      renderer.setSelected(drag.clickKey || null);
+    }
     drag = null;
   });
 
@@ -597,7 +766,10 @@ TableGroup content [color: #0f766e] {
     state.positions = new Map();
     state.fitted = false;
     renderer.setSelected(null);
-    applyModel(OD.applyView(state.fullModel, state.viewName)).then(showStatus);
+    applyModel(OD.applyView(state.fullModel, state.viewName)).then(() => {
+      showStatus();
+      if (focusedLine) focusLine(focusedLine, { reveal: false });
+    });
   }
   viewSelect.addEventListener('change', (e) => setView(e.target.value));
 
@@ -668,7 +840,13 @@ TableGroup content [color: #0f766e] {
     } else if (mod && e.key === 'o') {
       e.preventDefault();
       actions.open();
-    } else if (e.target === editor) {
+    } else if (mod && e.key === 'f' && !document.body.classList.contains('editor-hidden')) {
+      e.preventDefault();
+      openSearch();
+    } else if (mod && e.key === 'g' && !searchBar.hidden) {
+      e.preventDefault();
+      gotoMatch(search.index + (e.shiftKey ? -1 : 1));
+    } else if (e.target.closest('input, textarea, select')) {
       return;
     } else if (!layoutMenu.hidden && (e.key === 'Escape' || OD.layoutAlgorithms.some((a) => a.key === e.key))) {
       const a = OD.layoutAlgorithms.find((x) => x.key === e.key);
@@ -679,7 +857,10 @@ TableGroup content [color: #0f766e] {
     else if (e.key === 'p') actions['toggle-project']();
     else if (e.key === '+' || e.key === '=') zoomCenter(1.2);
     else if (e.key === '-') zoomCenter(1 / 1.2);
-    else if (e.key === 'Escape') renderer.setSelected(null);
+    else if (e.key === 'Escape') {
+      clearFocus();
+      renderer.setSelected(null);
+    }
   });
 
   // Resizable editor pane.
@@ -711,5 +892,5 @@ TableGroup content [color: #0f766e] {
   renderHighlight();
   parse();
 
-  OD.app = { state, renderer, openText, actions, fit, relayout, setView, md };
+  OD.app = { state, renderer, openText, actions, fit, relayout, setView, md, focusLine, openSearch };
 })((window.OD = window.OD || {}));

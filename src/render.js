@@ -58,6 +58,11 @@
       .od-dep.active, .od-dep:hover { opacity: 1; }
       .od-dep.active .od-dep-line, .od-dep:hover .od-dep-line { stroke-width: ${t.dep.width * 1.6}; }
       .od-hide-deps .od-deps { display: none; }
+      .od-focus .od-table:not(.focused), .od-focus .od-group:not(.focused) { opacity: ${t.focus.dimOpacity}; }
+      .od-focus .od-ref:not(.active), .od-focus .od-dep:not(.active) { opacity: ${t.focus.dimOpacity * 0.5}; }
+      .od-table.focused .od-table-border { stroke: ${t.focus.color}; stroke-width: 2.5; }
+      .od-row.focused .od-row-bg { fill: ${t.focus.rowFill}; }
+      .od-group.focused rect:first-child { stroke-width: 2.5; stroke-opacity: 1; }
       .od-group-label { font-weight: 700; font-size: ${t.group.labelSize}px; dominant-baseline: central; }
       .od-note-bg { fill: ${t.note.background}; stroke: ${t.note.border}; }
       .od-note-title { font-weight: 600; fill: ${t.note.text}; dominant-baseline: central; }
@@ -78,6 +83,7 @@
       this.sizes = new Map();
       this.positions = new Map();
       this.selected = null;
+      this.focus = null; // what the editor cursor points at, see setFocus()
       this.buildSkeleton();
     }
 
@@ -120,6 +126,7 @@
       for (const n of this.model.notes) this.drawNote(n);
       this.updateDynamic();
       this.setSelected(this.selected && this.model.tableByKey.has(this.selected) ? this.selected : null);
+      this.applyFocus();
     }
 
     // Groups and refs depend on table positions; redraw them while dragging.
@@ -128,6 +135,7 @@
       this.drawRefs();
       this.drawDeps();
       if (this.selected) this.markActiveRefs(this.selected);
+      this.applyFocus();
     }
 
     moveNode(key) {
@@ -273,6 +281,7 @@
       for (const [k, n] of this.tableNodes) n.classList.toggle('selected', k === key);
       this.svg.classList.toggle('od-dim', !!key);
       this.markActiveRefs(key);
+      if (this.focus) this.applyFocus();
     }
 
     markActiveRefs(key) {
@@ -284,6 +293,40 @@
         const n = this.depNodes && this.depNodes.get(dep.id);
         if (n) n.classList.toggle('active', !!key && (dep.from.table === key || dep.to.table === key));
       }
+    }
+
+    // Light up one source element (OD.focusFor) and fade the rest; null clears it.
+    setFocus(focus) {
+      const empty = !focus || !(focus.tables.size || focus.notes.size || focus.refs.size || focus.deps.size);
+      this.focus = empty ? null : focus;
+      this.applyFocus();
+    }
+
+    applyFocus() {
+      const f = this.focus;
+      this.svg.classList.toggle('od-focus', !!f);
+      if (!this.tableNodes) return;
+      for (const [k, n] of this.tableNodes) n.classList.toggle('focused', !!f && (f.tables.has(k) || f.notes.has(k)));
+      this.svg.querySelectorAll('.od-row').forEach((row) => {
+        const fields = f && f.fields.get(row.dataset.key);
+        row.classList.toggle('focused', !!fields && fields.has(row.dataset.field));
+      });
+      this.svg.querySelectorAll('.od-group').forEach((g) => g.classList.toggle('focused', !!f && f.groups.has(g.dataset.group)));
+      if (!this.refNodes || !this.depNodes) return;
+      this.markActiveRefs(this.selected);
+      if (f) {
+        for (const [id, n] of this.refNodes) if (f.refs.has(id)) n.classList.add('active');
+        for (const [id, n] of this.depNodes) if (f.deps.has(id)) n.classList.add('active');
+      }
+    }
+
+    // Bounding box of the focused boxes (tables and notes), for scrolling them into view.
+    focusBox() {
+      if (!this.focus) return null;
+      const keys = [...this.focus.tables, ...this.focus.notes];
+      const boxes = keys.map((k) => this.box(k)).filter(Boolean);
+      for (const k of this.focus.groups) if (this.groupBoxes && this.groupBoxes.get(k)) boxes.push(this.groupBoxes.get(k));
+      return G().bbox(boxes, 0);
     }
 
     contentBox() {
@@ -298,8 +341,8 @@
       const clone = this.svg.cloneNode(true);
       clone.querySelector('.od-grid').remove();
       clone.querySelector('.od-viewport').removeAttribute('transform');
-      clone.classList.remove('od-dim');
-      clone.querySelectorAll('.selected, .active').forEach((n) => n.classList.remove('selected', 'active'));
+      clone.classList.remove('od-dim', 'od-focus');
+      clone.querySelectorAll('.selected, .active, .focused').forEach((n) => n.classList.remove('selected', 'active', 'focused'));
       clone.querySelectorAll('.od-ref-hit, .od-dep-hit, .od-group-handle').forEach((n) => n.remove());
       clone.setAttribute('xmlns', NS);
       clone.setAttribute('viewBox', `${bb.x - padding} ${bb.y - padding} ${bb.w + padding * 2} ${bb.h + padding * 2}`);

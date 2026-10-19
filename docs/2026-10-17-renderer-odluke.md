@@ -121,3 +121,20 @@ Stanje po značajkama je u `docs/2026-10-19-dbml-znacajke.md`. Ovdje samo zamke:
   `getPointAtLength(len / 2)` i preračuna ga s `getScreenCTM()`.
 - `OD.applyView` vraća novi model (podskup tablica, refova, depova, grupa, bilježaka), pa layout,
   crtanje i izvoz ne znaju za poglede. Puni model je u `state.fullModel`.
+
+## 2026-10-19: pretraga u editoru i veza kursor → dijagram
+
+- **⌘F** otvara traku za pretragu nad editorom (bez razlike velikih i malih slova, običan tekst).
+  Enter / ⇧Enter ili ⌘G / ⇧⌘G idu kroz pogotke, Esc vraća fokus u editor s označenim pogotkom.
+  Pogoci se crtaju u sloju `#search-marks` ispod highlighta (isti font i scroll), jer
+  `<textarea>` ne pokazuje selekciju dok nije u fokusu.
+- **Kursor u editoru** (`selectionchange`) → `OD.elementAtLine` nađe najuži element čiji raspon
+  redaka sadrži kursor (model ga puni iz `token.start/end.line` parsera u `model.sources`), a
+  `OD.focusFor` ga pretvori u tablice, polja, refove, depove, grupe i bilješke za isticanje.
+  Ostalo se zatamni (`theme.focus.dimOpacity`), a pogled se animirano pomakne (i po potrebi
+  odzumira) da istaknuto stane na ekran. Klik na prazno platno ili Esc briše isticanje.
+- Polja iz TablePartiala imaju token u partialu, ne u tablici: kursor na retku polja u
+  `TablePartial` bloku istakne to polje u svim tablicama koje ga koriste; redak `~partial` u
+  tablici istakne samo tablicu.
+- Inline ref ima isti redak kao polje; tada pobjeđuje polje, koje ionako istakne i svoje refove.
+- Pogodak pretrage također pomiče isticanje na dijagramu.

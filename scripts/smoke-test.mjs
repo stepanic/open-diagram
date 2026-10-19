@@ -270,6 +270,79 @@ if (extra.deps) {
 }
 await page.screenshot({ path: path.join(outDir, 'deps.png') });
 
+// Editor cursor → diagram: the element under the caret lights up.
+const caretAt = async (needle) => {
+  await page.evaluate((n) => {
+    const ed = document.querySelector('#editor');
+    const i = ed.value.indexOf(n);
+    ed.focus();
+    ed.setSelectionRange(i + 2, i + 2);
+  }, needle);
+  await page.waitForTimeout(350);
+  return page.evaluate(() => ({
+    tables: [...document.querySelectorAll('.od-table.focused')].map((n) => n.dataset.key),
+    rows: [...document.querySelectorAll('.od-row.focused')].map((n) => `${n.dataset.key}.${n.dataset.field}`),
+    refs: document.querySelectorAll('.od-ref.active').length,
+    deps: document.querySelectorAll('.od-dep.active').length,
+    dimmed: document.querySelector('#diagram').classList.contains('od-focus'),
+  }));
+};
+const focusInfo = await page.evaluate(() => {
+  const m = OD.app.state.model;
+  const ref = m.refs.find((r) => r.from.fields.length && r.to.fields.length);
+  const dep = m.deps.find((d) => d.name);
+  const en = [...m.enums.keys()].find((k) => m.tables.some((t) => t.fields.some((f) => f.enumKey === k)));
+  return { ref: ref && { table: ref.from.table, field: ref.from.fields[0], to: ref.to.table }, depName: dep && dep.name, en };
+});
+if (focusInfo.ref) {
+  const tableLine = await page.evaluate((t) => document.querySelector('#editor').value.split('\n').find((l) => new RegExp(`^Table ${t}\\b`).test(l)), focusInfo.ref.table);
+  const f = await caretAt(tableLine);
+  check('cursor on a Table lights that table', f.dimmed && f.tables.includes(focusInfo.ref.table), f.tables.join(', '));
+}
+if (focusInfo.depName) {
+  const f = await caretAt(`Dep ${focusInfo.depName}`);
+  check('cursor on a Dep block lights its lineage', f.deps > 0 && f.tables.length > 1, `${f.deps} deps, ${f.tables.length} tables`);
+}
+if (focusInfo.en) {
+  const f = await caretAt(`Enum ${focusInfo.en} {`);
+  check('cursor on an Enum lights the fields using it', f.rows.length > 0, f.rows.slice(0, 4).join(', '));
+}
+const fieldLine = await caretAt('bridge varchar [ref: >?');
+if (fieldLine.tables.length) check('cursor on a field lights the row and its ref', fieldLine.rows.length >= 1 && fieldLine.refs >= 1, `${fieldLine.rows.join(', ')} · ${fieldLine.refs} refs`);
+await page.screenshot({ path: path.join(outDir, 'cursor-focus.png') });
+await page.keyboard.press('Escape');
+await page.mouse.click(5, 300); // outside the canvas
+await page.evaluate(() => document.querySelector('#editor').blur());
+await page.keyboard.press('Escape');
+check('Escape clears the focus', !(await page.evaluate(() => document.querySelector('#diagram').classList.contains('od-focus'))));
+
+// Editor search.
+await page.evaluate(() => {
+  const ed = document.querySelector('#editor');
+  ed.focus();
+  ed.setSelectionRange(0, 0);
+});
+await page.keyboard.press(process.platform === 'darwin' ? 'Meta+f' : 'Control+f');
+await page.keyboard.type('wallets');
+await page.waitForTimeout(100);
+const s1 = await page.evaluate(() => ({
+  open: !document.querySelector('#search').hidden,
+  count: document.querySelector('#search-count').textContent,
+  marks: document.querySelectorAll('#search-marks mark').length,
+  sel: (() => { const ed = document.querySelector('#editor'); return ed.value.slice(ed.selectionStart, ed.selectionEnd); })(),
+}));
+const total = Number(s1.count.split('/')[1]);
+check('⌘F opens search and counts matches', s1.open && total > 1 && s1.marks === total && s1.sel.toLowerCase() === 'wallets', `${s1.count}, ${s1.marks} marks`);
+await page.keyboard.press('Enter');
+const s2 = await page.evaluate(() => document.querySelector('#search-count').textContent);
+await page.keyboard.press('Shift+Enter');
+const s3 = await page.evaluate(() => document.querySelector('#search-count').textContent);
+check('Enter / Shift+Enter step through matches', s2.startsWith('2/') && s3.startsWith('1/'), `${s1.count} → ${s2} → ${s3}`);
+await page.screenshot({ path: path.join(outDir, 'search.png') });
+await page.keyboard.press('Escape');
+const s4 = await page.evaluate(() => ({ hidden: document.querySelector('#search').hidden, marks: document.querySelectorAll('#search-marks mark').length, active: document.activeElement.id }));
+check('Escape closes search back to the editor', s4.hidden && !s4.marks && s4.active === 'editor', JSON.stringify(s4));
+
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
 

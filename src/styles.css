@@ -121,6 +121,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .workspace { flex: 1; display: flex; min-height: 0; }
 
 .editor-pane {
+  position: relative;
   width: var(--editor-width);
   display: flex;
   flex-direction: column;
@@ -179,6 +180,41 @@ body { display: flex; flex-direction: column; overflow: hidden; }
   resize: none;
   background: transparent;
 }
+
+.search-marks { color: transparent; }
+.search-marks mark { color: transparent; background: rgba(250, 204, 21, 0.35); border-radius: 2px; }
+.search-marks mark.cur { background: rgba(249, 115, 22, 0.6); }
+
+.search {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+}
+.search[hidden] { display: none; }
+.search input {
+  width: 180px;
+  font: 12.5px var(--mono);
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 6px;
+  outline: 0;
+}
+.search input:focus { border-color: var(--accent); }
+.search.none input { border-color: var(--error); }
+.search-count { min-width: 52px; text-align: center; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.search button { font: inherit; color: inherit; background: none; border: 0; border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+.search button:hover { background: var(--border); }
 
 #status {
   border-top: 1px solid var(--border);

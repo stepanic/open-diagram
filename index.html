@@ -47,9 +47,17 @@
 
   <main class="workspace">
     <section class="editor-pane">
+      <div id="search" class="search" hidden>
+        <input id="search-input" type="text" placeholder="Find" spellcheck="false" autocomplete="off">
+        <span id="search-count" class="search-count"></span>
+        <button data-search="prev" title="Previous (⇧Enter)">↑</button>
+        <button data-search="next" title="Next (Enter)">↓</button>
+        <button data-search="close" title="Close (Esc)">×</button>
+      </div>
       <div class="editor-wrap">
         <div id="gutter" class="gutter" aria-hidden="true"></div>
         <div class="code">
+          <pre id="search-marks" class="highlight search-marks" aria-hidden="true"></pre>
           <pre id="highlight" class="highlight" aria-hidden="true"></pre>
           <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </div>

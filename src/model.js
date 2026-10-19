@@ -10,6 +10,9 @@
   // Custom properties (`[owner: 'x']`, Metadata blocks) as [key, value] pairs, or null.
   const props = (metadata) => (metadata && Object.keys(metadata).length ? Object.entries(metadata) : null);
 
+  // Source line range [start, end] of a parsed element (1-based, inclusive), or null.
+  const span = (o) => (o && o.token ? [o.token.start.line, o.token.end.line] : null);
+
   const checksOf = (checks) => (checks || []).map((c) => ({ name: c.name || null, expression: c.expression }));
 
   function buildModel(source) {
@@ -21,11 +24,22 @@
     const refs = [];
     const deps = [];
     const groups = [];
+    // Which diagram element each stretch of source describes; see elementAtLine().
+    const sources = [];
+    const locate = (o, target) => {
+      const r = span(o);
+      if (r) sources.push({ start: r[0], end: r[1], ...target });
+    };
 
     for (const schema of db.schemas) {
       for (const e of schema.enums) {
         enums.set(qualify(schema.name, e.name), e.values.map((v) => ({ name: v.name, note: v.note || null })));
+        locate(e, { kind: 'enum', key: qualify(schema.name, e.name) });
       }
+    }
+    for (const p of db.tablePartials || []) {
+      locate(p, { kind: 'partial', name: p.name });
+      for (const f of p.fields || []) locate(f, { kind: 'partial', name: p.name, field: f.name });
     }
 
     for (const schema of db.schemas) {
@@ -80,6 +94,10 @@
         };
         tables.push(table);
         tableByKey.set(key, table);
+        locate(t, { kind: 'table', key });
+        // Fields from a partial point at the partial's lines, which the partial entry covers.
+        t.fields.forEach((f) => !f.injectedPartial && locate(f, { kind: 'field', key, field: f.name }));
+        t.indexes.forEach((idx) => locate(idx, { kind: 'table', key }));
       }
     }
 
@@ -103,6 +121,7 @@
           const f = tableByKey.get(pkSide.table).fieldByName.get(name);
           if (f) f.referenced = true;
         }
+        locate(r, { kind: 'ref', id: `ref${refs.length}` });
         refs.push({
           id: `ref${refs.length}`,
           name: r.name || null,
@@ -117,10 +136,13 @@
 
       // Data lineage: one entry per edge, upstream (source) → downstream (derived).
       for (const d of schema.deps || []) {
+        const ids = [];
         for (const e of d.edges) {
           const from = { table: qualify(e.upstream.schemaName, e.upstream.tableName), fields: e.upstream.fieldNames || [] };
           const to = { table: qualify(e.downstream.schemaName, e.downstream.tableName), fields: e.downstream.fieldNames || [] };
           if (!tableByKey.has(from.table) || !tableByKey.has(to.table)) continue;
+          ids.push(`dep${deps.length}`);
+          locate(e, { kind: 'dep', ids: [`dep${deps.length}`] });
           deps.push({
             id: `dep${deps.length}`,
             name: d.name || null,
@@ -131,6 +153,7 @@
             props: props(d.metadata),
           });
         }
+        locate(d, { kind: 'dep', ids });
       }
 
       for (const g of schema.tableGroups) {
@@ -144,9 +167,11 @@
         };
         group.tables.forEach((k) => tableByKey.has(k) && (tableByKey.get(k).group = group.key));
         groups.push(group);
+        locate(g, { kind: 'group', key: group.key });
       }
     }
 
+    db.notes.forEach((n) => locate(n, { kind: 'note', key: `note:${n.name}` }));
     const notes = db.notes.map((n) => ({
       key: `note:${n.name}`,
       name: n.name,
@@ -158,7 +183,10 @@
     for (const r of db.records || []) {
       const t = tableByKey.get(qualify(r.schemaName, r.tableName));
       if (t) t.records.push({ columns: r.columns, rows: r.values.map((row) => row.map((v) => v.value)) });
+      if (t) locate(r, { kind: 'table', key: t.key });
     }
+    (db.diagramViews || []).forEach((v) => locate(v, { kind: 'view', name: v.name }));
+    locate(db, { kind: 'project' });
 
     const views = (db.diagramViews || []).map((v) => ({ name: v.name, entities: v.visibleEntities }));
 
@@ -172,7 +200,90 @@
       notes,
       enums,
       views,
+      sources,
     };
+  }
+
+  // The innermost element whose source contains `line`; on equal ranges the later entry wins,
+  // so a field line with an inline ref resolves to the ref only when the ref spans less.
+  function elementAtLine(model, line) {
+    let best = null;
+    for (const s of model.sources) {
+      if (line < s.start || line > s.end) continue;
+      if (!best || s.end - s.start < best.end - best.start || (s.end - s.start === best.end - best.start && s.kind === 'field')) best = s;
+    }
+    return best;
+  }
+
+  // Everything on the diagram one source element stands for: the tables, fields, refs, deps,
+  // groups and notes to light up.
+  function focusFor(model, el) {
+    const f = { tables: new Set(), fields: new Map(), refs: new Set(), deps: new Set(), groups: new Set(), notes: new Set() };
+    if (!el) return f;
+    const addField = (key, name) => {
+      f.tables.add(key);
+      if (!f.fields.has(key)) f.fields.set(key, new Set());
+      f.fields.get(key).add(name);
+      for (const r of model.refs) {
+        if ((r.from.table === key && r.from.fields.includes(name)) || (r.to.table === key && r.to.fields.includes(name))) addRef(r);
+      }
+      for (const d of model.deps) {
+        if ((d.from.table === key && d.from.fields.includes(name)) || (d.to.table === key && d.to.fields.includes(name))) addDep(d);
+      }
+    };
+    const addRef = (r) => {
+      f.refs.add(r.id);
+      f.tables.add(r.from.table).add(r.to.table);
+    };
+    const addDep = (d) => {
+      f.deps.add(d.id);
+      f.tables.add(d.from.table).add(d.to.table);
+    };
+    switch (el.kind) {
+      case 'table':
+        f.tables.add(el.key);
+        break;
+      case 'field':
+        addField(el.key, el.field);
+        break;
+      case 'ref':
+        model.refs.filter((r) => r.id === el.id).forEach((r) => {
+          addRef(r);
+          r.from.fields.forEach((n) => f.fields.has(r.from.table) ? f.fields.get(r.from.table).add(n) : f.fields.set(r.from.table, new Set([n])));
+          r.to.fields.forEach((n) => f.fields.has(r.to.table) ? f.fields.get(r.to.table).add(n) : f.fields.set(r.to.table, new Set([n])));
+        });
+        break;
+      case 'dep':
+        model.deps.filter((d) => el.ids.includes(d.id)).forEach(addDep);
+        break;
+      case 'group': {
+        const g = model.groups.find((x) => x.key === el.key);
+        if (g) {
+          f.groups.add(g.key);
+          g.tables.forEach((k) => f.tables.add(k));
+        }
+        break;
+      }
+      case 'enum':
+        for (const t of model.tables) for (const fld of t.fields) if (fld.enumKey === el.key) addField(t.key, fld.name);
+        break;
+      case 'partial':
+        for (const t of model.tables) for (const fld of t.fields) if (fld.partial === el.name && (!el.field || fld.name === el.field)) addField(t.key, fld.name);
+        break;
+      case 'note':
+        f.notes.add(el.key);
+        break;
+      case 'view': {
+        const v = applyView(model, el.name);
+        v.tables.forEach((t) => f.tables.add(t.key));
+        v.notes.forEach((n) => f.notes.add(n.key));
+        break;
+      }
+      default:
+    }
+    // Only what is on the current diagram (a DiagramView may hide the rest).
+    for (const k of [...f.tables]) if (!model.tableByKey.has(k)) f.tables.delete(k);
+    return f;
   }
 
   // The part of a model one DiagramView shows. The parser gives every category as null (not
@@ -222,5 +333,7 @@
 
   OD.buildModel = buildModel;
   OD.applyView = applyView;
+  OD.elementAtLine = elementAtLine;
+  OD.focusFor = focusFor;
   OD.formatErrors = formatErrors;
 })((window.OD = window.OD || {}));
