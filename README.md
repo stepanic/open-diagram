@@ -58,3 +58,4 @@ Open Diagram: MIT. Bundled in `vendor/`: [`@dbml/core`](https://github.com/holis
 ## Vezani dokumenti
 
 - [docs/2026-10-17-renderer-odluke.md](docs/2026-10-17-renderer-odluke.md): odluke, mjerenja rasporeda, zamke, otvorene stavke
+- [docs/2026-10-19-dbml-znacajke.md](docs/2026-10-19-dbml-znacajke.md): sve značajke DBML-a, što Open Diagram od njih prikazuje, što dodati
