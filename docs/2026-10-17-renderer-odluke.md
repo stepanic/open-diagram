@@ -143,3 +143,44 @@ Stanje po značajkama je u `docs/2026-10-19-dbml-znacajke.md`. Ovdje samo zamke:
   (`field.line`, `ref.line`, `dep.line`, `group.line`) i istakne ga na dijagramu. Editor namjerno
   ne dobiva fokus: inače bi tipke platna (F, +, -) upisivale znakove u DBML. Dvoklik skače u
   editor na taj redak (s fokusom) za uređivanje. Polje iz partiala vodi na redak u `TablePartial`.
+
+## 2026-10-19: Follow i otvaranje s URL-a
+
+### Follow (zoom za kursorom)
+
+- **Cilj nije `renderer.focusBox()`.** Fokus polja uključuje sve tablice s kojima je polje
+  povezano refom, pa bi zoom na `users.id` odzumirao pola sheme. `followTarget()` u `app.js` zato
+  bira sam element: polje → njegova tablica (red se centrira kad tablica ne stane), ref → obje
+  tablice, grupa → okvir grupe, ostalo (enum, partial, Dep) → `focusBox()`.
+- **Zoom je ograničen na [0.5, 1.25].** Fit na malu tablicu bez gornje granice daje 300–400 %. Na
+  `open-ledger` tablica s 20 polja stane pri 1.25, a grupa `ledger` također.
+- **Ključ cilja (`t:<tablica>`, `r:<ref>`, `g:<grupa>`)** odlučuje hoće li se pogled pomaknuti:
+  kretanje po poljima iste tablice ne trese platno, osim kad red izađe s ekrana. Debounce od
+  150 ms, a označavanje na dijagramu ostaje trenutno.
+- **Ručni pan/zoom/Fit pauzira** praćenje do sljedećeg cilja, umjesto da ga isključi trajno.
+- **Zamka:** `fit()` nije prekidao animaciju `revealFocus` koja je bila u tijeku, pa ju je
+  animacija prepisala 220 ms kasnije. Prije se to nije vidjelo jer je element obično već bio na
+  ekranu. Sad `fit()` zove `pauseFollow()`, koji prekida i animaciju.
+
+### `?url=` i dijeljenje
+
+- **Raw adrese:** `github.com/o/r/blob|raw/<ref>/<put>` → `raw.githubusercontent.com/o/r/<ref>/<put>`,
+  `gist.github.com/u/id` → `gist.githubusercontent.com/u/id/raw` (prva datoteka gista),
+  GitLab `/-/blob/` → `/-/raw/`. `raw.githubusercontent.com` šalje
+  `Access-Control-Allow-Origin: *`, pa radi i s `file://`. Ostali hostovi ovise o svom CORS-u.
+- **Ime dokumenta je put raw URL-a bez hosta** (`owner/repo/ref/put.dbml`). Rasporedi u
+  localStorageu su po imenu, pa dva `schema.dbml` iz različitih repoa ne dijele položaje.
+- **`.layout.json` uz `.dbml`** se primijeni samo kad browser nema svoje položaje za tu
+  datoteku. Inače bi svaki reload poništio ručno razmještanje. Eksplicitni `&layout=` uvijek
+  pobjeđuje.
+- **Prvo tipkanje briše `?url=`** (`forgetRemote()`), jer bi reload s parametrom ponovno povukao
+  datoteku i bez upozorenja bacio izmjene. Izmijenjeni tekst zato nema link za dijeljenje.
+- **Neuspjelo učitavanje** iscrta zadnji dokument iz localStoragea pa tek onda postavi grešku u
+  status. Obrnutim redom bi `parse()` prepisao poruku.
+- **Test** lažira `raw.githubusercontent.com` preko `page.route`, pa ne treba mrežu. 404 za
+  `.layout.json` je očekivan i ne smije se brojati kao greška.
+
+### Otvoreno
+
+- Embed: prijedlog je u [2026-10-19-embed.md](2026-10-19-embed.md). Prvi korak je `src/viewer.js`.
+- Share link za lokalno izmijenjen tekst (npr. `#dbml=` deflate u hashu, vidi embed dokument).
