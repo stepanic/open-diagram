@@ -310,6 +310,34 @@ if (focusInfo.en) {
 const fieldLine = await caretAt('bridge varchar [ref: >?');
 if (fieldLine.tables.length) check('cursor on a field lights the row and its ref', fieldLine.rows.length >= 1 && fieldLine.refs >= 1, `${fieldLine.rows.join(', ')} · ${fieldLine.refs} refs`);
 await page.screenshot({ path: path.join(outDir, 'cursor-focus.png') });
+
+// Follow: the view zooms to the element under the caret, within readable bounds.
+if (focusInfo.ref) {
+  await page.click('[data-action="toggle-follow"]');
+  const viewOn = async (needle, key) => {
+    await caretAt(needle);
+    await page.waitForTimeout(250);
+    return page.evaluate((k) => {
+      const { view } = OD.app.state;
+      const b = OD.app.renderer.box(k);
+      const r = document.querySelector('#diagram').getBoundingClientRect();
+      const cx = (b.x + b.w / 2) * view.k + view.x;
+      const cy = (b.y + b.h / 2) * view.k + view.y;
+      return { k: view.k, inside: cx > 0 && cx < r.width && cy > 0 && cy < r.height, pressed: document.querySelector('[data-action="toggle-follow"]').getAttribute('aria-pressed') };
+    }, key);
+  };
+  const tableLine = await page.evaluate((t) => document.querySelector('#editor').value.split('\n').find((l) => new RegExp(`^Table ${t}\\b`).test(l)), focusInfo.ref.to);
+  const v1 = await viewOn(tableLine, focusInfo.ref.to);
+  check('Follow zooms to the table under the caret', v1.pressed === 'true' && v1.inside && v1.k >= 0.5 && v1.k <= 1.25, `k=${v1.k.toFixed(2)}`);
+  const fieldNeedle = await page.evaluate(({ t, f }) => {
+    const lines = document.querySelector('#editor').value.split('\n');
+    const start = lines.findIndex((l) => new RegExp(`^Table ${t}\\b`).test(l));
+    return lines.slice(start).find((l) => l.trim().startsWith(`${f} `));
+  }, { t: focusInfo.ref.table, f: focusInfo.ref.field });
+  const v2 = await viewOn(fieldNeedle, focusInfo.ref.table);
+  check('Follow moves to a field\'s table, not every table it refs', v2.inside && v2.k >= 0.5 && v2.k <= 1.25, `k=${v2.k.toFixed(2)}`);
+  await page.click('[data-action="toggle-follow"]');
+}
 await page.keyboard.press('Escape');
 await page.mouse.click(5, 300); // outside the canvas
 await page.evaluate(() => document.querySelector('#editor').blur());
