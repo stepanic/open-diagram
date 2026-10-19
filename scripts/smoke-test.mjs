@@ -445,6 +445,60 @@ await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z'
 await page.waitForTimeout(500);
 check('undo removes the suggested refs', (await page.evaluate(() => OD.app.state.model.refs.length)) === 0);
 
+// Open from a URL: GitHub page links become raw URLs, ?url= renders at once, and a
+// .layout.json next to the .dbml is applied. The raw host is mocked, so no network is needed.
+const conv = await page.evaluate(() => [
+  OD.rawUrl('https://github.com/acme/db/blob/main/docs/schema.dbml'),
+  OD.rawUrl('github.com/acme/db/raw/feature/x/schema.dbml'),
+  OD.rawUrl('https://gist.github.com/someone/abc123'),
+  OD.rawUrl('https://gitlab.com/acme/db/-/blob/main/schema.dbml'),
+  OD.rawUrl('https://stepanic.github.io/open-diagram/?url=https://github.com/acme/db/blob/main/schema.dbml'),
+]);
+check('GitHub, Gist and GitLab links map to raw files', JSON.stringify(conv) === JSON.stringify([
+  'https://raw.githubusercontent.com/acme/db/main/docs/schema.dbml',
+  'https://raw.githubusercontent.com/acme/db/feature/x/schema.dbml',
+  'https://gist.githubusercontent.com/someone/abc123/raw',
+  'https://gitlab.com/acme/db/-/raw/main/schema.dbml',
+  'https://raw.githubusercontent.com/acme/db/main/schema.dbml',
+]), conv.join(' '));
+const remote = await context.newPage();
+const remoteErrors = [];
+remote.on('pageerror', (e) => remoteErrors.push(String(e)));
+await remote.route('https://raw.githubusercontent.com/**', (route) => {
+  const u = route.request().url();
+  if (u.endsWith('/shop.dbml')) return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, contentType: 'text/plain', body: 'Table customers {\n  id int [pk]\n}\nTable orders {\n  id int [pk]\n  customer_id int [ref: > customers.id]\n}\n' });
+  if (u.endsWith('/shop.layout.json')) return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, contentType: 'application/json', body: JSON.stringify({ positions: { customers: { x: 0, y: 0 }, orders: { x: 900, y: 40 } } }) });
+  return route.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: '' });
+});
+await remote.goto(`${url}?url=https://github.com/acme/shop/blob/main/db/shop.dbml`);
+await remote.waitForFunction(() => OD.app && OD.app.state.model && OD.app.state.model.tables.length === 2, null, { timeout: 5000 }).catch(() => {});
+await remote.waitForTimeout(300);
+const r1 = await remote.evaluate(() => ({
+  tables: document.querySelectorAll('.od-table').length,
+  doc: document.querySelector('#doc-name').textContent,
+  orders: OD.app.state.positions.get('orders'),
+  query: new URLSearchParams(location.search).get('url'),
+}));
+check('?url= with a GitHub link renders the file and its layout', r1.tables === 2 && r1.doc === 'acme/shop/main/db/shop.dbml' && r1.orders && r1.orders.x === 900 && r1.query === 'https://github.com/acme/shop/blob/main/db/shop.dbml', JSON.stringify(r1));
+await remote.click('[data-action="url-menu"]');
+const menu = await remote.evaluate(() => ({ value: document.querySelector('#url-input').value, copy: !document.querySelector('#url-copy').disabled }));
+check('URL menu shows the source and offers a share link', menu.copy && menu.value === r1.query, JSON.stringify(menu));
+await remote.keyboard.press('Escape');
+await remote.evaluate(() => {
+  const ed = document.querySelector('#editor');
+  ed.focus();
+  ed.setSelectionRange(ed.value.length, ed.value.length);
+});
+await remote.keyboard.type('\n// edited');
+const r2 = await remote.evaluate(() => ({ search: location.search, remote: OD.app.state.remote }));
+check('editing drops ?url= so a reload cannot discard the edit', r2.search === '' && r2.remote === null, JSON.stringify(r2));
+await remote.goto(`${url}?url=https://raw.githubusercontent.com/acme/shop/main/missing.dbml`);
+await remote.waitForTimeout(800);
+const r3 = await remote.evaluate(() => ({ status: document.querySelector('#status').textContent, cls: document.querySelector('#status').className, tables: document.querySelectorAll('.od-table').length }));
+check('a URL that fails shows an error and keeps the last document', r3.cls === 'error' && /HTTP 404/.test(r3.status) && r3.tables > 0, r3.status);
+check('no page errors while opening URLs', remoteErrors.length === 0, remoteErrors.join(' | '));
+await remote.close();
+
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
 
