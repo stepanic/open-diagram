@@ -153,6 +153,20 @@
     return `M${bar},${y - 6} L${bar},${y + 6}`;
   }
 
+  // The "zero" of a 0..1 end: a hollow circle just past the bar.
+  function optionalPath(end) {
+    const r = 3.5;
+    const cx = end.x + end.dir * 17;
+    return `M${cx - r},${end.y} a${r},${r} 0 1,0 ${r * 2},0 a${r},${r} 0 1,0 ${-r * 2},0`;
+  }
+
+  // Filled arrowhead pointing into the table at `end`.
+  function arrowPath(end, len) {
+    const { x, y, dir } = end;
+    const base = x + dir * len;
+    return `M${x},${y} L${base},${y - len * 0.55} L${base},${y + len * 0.55} Z`;
+  }
+
   function bbox(boxes, pad = 0) {
     if (!boxes.length) return null;
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
@@ -165,5 +179,5 @@
     return { x: x1 - pad, y: y1 - pad, w: x2 - x1 + pad * 2, h: y2 - y1 + pad * 2 };
   }
 
-  OD.geometry = { textWidth, visibleFields, typeLabel, tableSize, noteSize, anchorY, routeRef, roundedPath, markerPath, bbox };
+  OD.geometry = { textWidth, visibleFields, typeLabel, tableSize, noteSize, anchorY, routeRef, roundedPath, markerPath, optionalPath, arrowPath, bbox };
 })((window.OD = window.OD || {}));

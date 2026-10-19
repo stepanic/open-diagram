@@ -12,6 +12,7 @@
     <span id="doc-name" class="doc-name"></span>
     <div class="group">
       <button data-action="toggle-editor" title="Show / hide editor">Editor</button>
+      <button data-action="toggle-project" title="Project note (P)" hidden>Project</button>
       <button data-action="open" title="Open .dbml or .layout.json (⌘O)">Open</button>
       <button data-action="save-dbml" title="Download DBML (⌘S)">Save</button>
     </div>
@@ -27,6 +28,8 @@
         <option value="keys">Keys only</option>
         <option value="header">Names only</option>
       </select>
+      <select id="view" title="DiagramView: show only part of the model" hidden></select>
+      <button data-action="toggle-deps" title="Show / hide data lineage (Dep) lines (L)" aria-pressed="true" hidden>Lineage</button>
     </div>
     <div class="group">
       <button data-action="zoom-out" title="Zoom out (-)">−</button>
@@ -56,6 +59,10 @@
     <div id="splitter" class="splitter"></div>
     <section class="canvas-pane">
       <svg id="diagram"></svg>
+      <aside id="project-panel" class="project-panel" hidden>
+        <button class="pp-close" data-action="toggle-project" title="Close (P)">×</button>
+        <div id="project-body"></div>
+      </aside>
     </section>
   </main>
 

@@ -39,6 +39,15 @@
       radius: 8, // corner rounding
       marker: 'crowsfoot', // 'crowsfoot' | 'labels'
       dimOpacity: 0.18, // other refs while a table is highlighted
+      inactiveDash: '2 4', // refs marked [inactive]
+    },
+
+    dep: {
+      color: '#8b5cf6', // when the Dep has no color of its own
+      width: 1.25,
+      dash: '6 4',
+      arrow: 7, // arrowhead length at the derived (downstream) end
+      opacity: 0.85,
     },
 
     group: {

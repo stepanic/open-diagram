@@ -75,6 +75,9 @@ TableGroup content [color: #0f766e] {
     source: store.get('source', SAMPLE),
     detail: store.get('detail', 'all'),
     algorithm: store.get('layoutAlgorithm', 'left-right'),
+    showDeps: store.get('showDeps', true),
+    viewName: null, // DiagramView currently shown, null = whole model
+    fullModel: null, // model before the DiagramView filter
     model: null,
     positions: new Map(),
     view: { x: 0, y: 0, k: 1 },
@@ -153,6 +156,7 @@ TableGroup content [color: #0f766e] {
     let model;
     try {
       model = OD.buildModel(state.source);
+      state.fullModel = model;
     } catch (err) {
       const errors = OD.formatErrors(err);
       errorLines = new Set(errors.map((e) => e.line).filter(Boolean));
@@ -165,14 +169,30 @@ TableGroup content [color: #0f766e] {
     errorLines = new Set();
     renderGutter();
     statusEl.onclick = null;
-    await applyModel(model);
-    setStatus(`${model.tables.length} tables · ${model.refs.length} refs · ${model.groups.length} groups${model.notes.length ? ` · ${model.notes.length} notes` : ''}`);
+    renderViewMenu();
+    renderProject();
+    if (state.viewName && !model.views.some((v) => v.name === state.viewName)) setView(null, { apply: false });
+    await applyModel(OD.applyView(model, state.viewName));
+    showStatus();
   }
+
+  function showStatus() {
+    const m = state.model;
+    const parts = [`${m.tables.length} tables`, `${m.refs.length} refs`];
+    if (m.deps.length) parts.push(`${m.deps.length} deps`);
+    parts.push(`${m.groups.length} groups`);
+    if (m.notes.length) parts.push(`${m.notes.length} notes`);
+    if (state.viewName) parts.push(`view ${state.viewName}`);
+    setStatus(parts.join(' · '));
+  }
+
+  // Each DiagramView keeps its own layout, so a view can be arranged on its own.
+  const positionsKey = () => `positions:${state.docName}${state.viewName ? `#${state.viewName}` : ''}`;
 
   async function applyModel(model, { relayout = false } = {}) {
     state.model = model;
     renderer.setModel(model, state.detail);
-    const saved = relayout ? {} : store.get(`positions:${state.docName}`, {});
+    const saved = relayout ? {} : store.get(positionsKey(), {});
     const keys = [...model.tables.map((t) => t.key), ...model.notes.map((n) => n.key)];
     const positions = new Map();
     for (const k of keys) {
@@ -204,7 +224,7 @@ TableGroup content [color: #0f766e] {
   }
 
   function savePositions() {
-    store.set(`positions:${state.docName}`, Object.fromEntries(state.positions));
+    store.set(positionsKey(), Object.fromEntries(state.positions));
   }
 
   // ---- view: pan / zoom --------------------------------------------------------------
@@ -315,6 +335,71 @@ TableGroup content [color: #0f766e] {
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
+  // Just enough Markdown for DBML notes: headings, lists, fenced code, `code`, **bold**, *em*, links.
+  function inlineMd(text) {
+    return esc(text)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+      .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>')
+      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+
+  function md(text) {
+    const out = [];
+    let para = [];
+    let list = null;
+    const flush = () => {
+      if (para.length) out.push(`<p>${inlineMd(para.join(' '))}</p>`);
+      para = [];
+      if (list) out.push(`<${list.tag}>${list.items.map((i) => `<li>${inlineMd(i)}</li>`).join('')}</${list.tag}>`);
+      list = null;
+    };
+    const lines = String(text).split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let m;
+      if (/^\s*```/.test(line)) {
+        flush();
+        const code = [];
+        while (++i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i]);
+        out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+      } else if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) {
+        flush();
+        out.push(`<h${m[1].length}>${inlineMd(m[2])}</h${m[1].length}>`);
+      } else if ((m = /^\s*([-*]|\d+[.)])\s+(.*)$/.exec(line))) {
+        const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
+        if (para.length || (list && list.tag !== tag)) flush();
+        if (!list) list = { tag, items: [] };
+        list.items.push(m[2]);
+      } else if (!line.trim()) flush();
+      else if (list && /^\s+/.test(line)) list.items[list.items.length - 1] += ` ${line.trim()}`;
+      else {
+        if (list) flush();
+        para.push(line);
+      }
+    }
+    flush();
+    return out.join('');
+  }
+
+  const noteHtml = (note) => (note ? `<div class="tt-note">${md(note)}</div>` : '');
+  const propsHtml = (props) => (props ? `<div class="tt-props">${props.map(([k, v]) => `<span>${esc(k)}:</span> ${esc(v)}`).join('<br>')}</div>` : '');
+  const checksHtml = (checks) =>
+    checks && checks.length ? `<div class="tt-refs">checks:<br>${checks.map((c) => `${c.name ? `${esc(c.name)}: ` : ''}<code>${esc(c.expression)}</code>`).join('<br>')}</div>` : '';
+  const cardinality = (ep) => (ep.many ? '*' : ep.optional ? '0..1' : '1');
+  const endpoint = (ep) => `${ep.table}${ep.fields.length ? `.${ep.fields.join(', ')}` : ''}`;
+
+  function recordsHtml(records) {
+    return records
+      .map((r) => {
+        const cols = r.columns.slice(0, 6);
+        const more = r.columns.length > cols.length ? `<th>+${r.columns.length - cols.length}</th>` : '';
+        const rows = r.rows.slice(0, 5).map((row) => `<tr>${cols.map((_, i) => `<td>${esc(row[i] === null ? 'null' : row[i])}</td>`).join('')}${more ? '<td></td>' : ''}</tr>`);
+        return `<table class="tt-records"><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join('')}${more}</tr>${rows.join('')}</table>`;
+      })
+      .join('');
+  }
+
   function tooltipHtml(target) {
     const m = state.model;
     const row = target.closest('.od-row');
@@ -324,42 +409,60 @@ TableGroup content [color: #0f766e] {
       const flags = [f.pk && 'primary key', f.fk && 'foreign key', f.unique && 'unique', f.notNull && 'not null', f.increment && 'increment'].filter(Boolean);
       const refs = m.refs
         .filter((r) => (r.from.table === t.key && r.from.fields.includes(f.name)) || (r.to.table === t.key && r.to.fields.includes(f.name)))
-        .map((r) => (r.from.table === t.key ? `→ ${r.to.table}.${r.to.fields.join(', ')}` : `← ${r.from.table}.${r.from.fields.join(', ')}`));
+        .map((r) => (r.from.table === t.key ? `→ ${endpoint(r.to)} (${cardinality(r.to)})` : `← ${endpoint(r.from)}`));
+      const deps = m.deps
+        .filter((d) => (d.from.table === t.key && d.from.fields.includes(f.name)) || (d.to.table === t.key && d.to.fields.includes(f.name)))
+        .map((d) => (d.from.table === t.key ? `⇢ ${endpoint(d.to)}` : `⇠ ${endpoint(d.from)}`));
       const enumValues = f.enumKey ? m.enums.get(f.enumKey) : null;
       return `<b>${esc(t.name)}.${esc(f.name)}</b> <code>${esc(f.type)}</code>
         ${flags.length ? `<div class="tt-flags">${flags.map(esc).join(' · ')}</div>` : ''}
+        ${f.partial ? `<div class="tt-muted">from ~${esc(f.partial)}</div>` : ''}
         ${f.default !== null ? `<div>default: <code>${esc(f.default)}</code></div>` : ''}
-        ${f.note ? `<div class="tt-note">${esc(f.note)}</div>` : ''}
+        ${noteHtml(f.note)}
+        ${checksHtml(f.checks)}
+        ${propsHtml(f.props)}
         ${enumValues ? `<div class="tt-enum">${enumValues.map((v) => `<code>${esc(v.name)}</code>`).join(' ')}</div>` : ''}
-        ${refs.length ? `<div class="tt-refs">${refs.map(esc).join('<br>')}</div>` : ''}`;
+        ${refs.length ? `<div class="tt-refs">${refs.map(esc).join('<br>')}</div>` : ''}
+        ${deps.length ? `<div class="tt-refs">lineage:<br>${deps.map(esc).join('<br>')}</div>` : ''}`;
     }
     const header = target.closest('.od-table-header');
     if (header) {
       const t = m.tableByKey.get(header.dataset.key);
-      const idx = t.indexes.map((i) => `(${i.columns.join(', ')})${i.pk ? ' pk' : i.unique ? ' unique' : ''}`);
-      if (!t.note && !t.alias && !idx.length) return null;
+      const idx = t.indexes.map(
+        (i) => `${i.name ? `${esc(i.name)} ` : ''}<code>(${esc(i.columns.join(', '))})</code>${i.pk ? ' pk' : i.unique ? ' unique' : ''}${i.type ? ` ${esc(i.type)}` : ''}${i.note ? ` <span class="tt-muted">${esc(i.note)}</span>` : ''}`,
+      );
+      if (!t.note && !t.alias && !idx.length && !t.checks.length && !t.props && !t.records.length) return null;
       return `<b>${esc(t.name)}</b>${t.alias ? ` <span class="tt-muted">as ${esc(t.alias)}</span>` : ''}
-        ${t.note ? `<div class="tt-note">${esc(t.note)}</div>` : ''}
-        ${idx.length ? `<div class="tt-refs">indexes: ${idx.map(esc).join(', ')}</div>` : ''}`;
+        ${noteHtml(t.note)}
+        ${propsHtml(t.props)}
+        ${idx.length ? `<div class="tt-refs">indexes:<br>${idx.join('<br>')}</div>` : ''}
+        ${checksHtml(t.checks)}
+        ${recordsHtml(t.records)}`;
     }
     const refEl = target.closest('.od-ref-hit');
     if (refEl) {
       const r = m.refs.find((x) => x.id === refEl.dataset.ref);
-      const actions = [r.onDelete && `on delete ${r.onDelete}`, r.onUpdate && `on update ${r.onUpdate}`].filter(Boolean);
-      return `<code>${esc(r.from.table)}.${esc(r.from.fields.join(', '))}</code> ${r.from.many ? '*' : '1'}–${r.to.many ? '*' : '1'}
-        <code>${esc(r.to.table)}.${esc(r.to.fields.join(', '))}</code>${actions.length ? `<div class="tt-flags">${actions.map(esc).join(' · ')}</div>` : ''}`;
+      const actions = [r.inactive && 'inactive', r.onDelete && `on delete ${r.onDelete}`, r.onUpdate && `on update ${r.onUpdate}`].filter(Boolean);
+      return `${r.name ? `<b>${esc(r.name)}</b><br>` : ''}<code>${esc(endpoint(r.from))}</code> ${cardinality(r.from)}–${cardinality(r.to)}
+        <code>${esc(endpoint(r.to))}</code>${actions.length ? `<div class="tt-flags">${actions.map(esc).join(' · ')}</div>` : ''}`;
+    }
+    const depEl = target.closest('.od-dep-hit');
+    if (depEl) {
+      const d = m.deps.find((x) => x.id === depEl.dataset.dep);
+      return `${d.name ? `<b>${esc(d.name)}</b> <span class="tt-muted">lineage</span><br>` : '<span class="tt-muted">lineage</span><br>'}<code>${esc(endpoint(d.from))}</code> → <code>${esc(endpoint(d.to))}</code>
+        ${noteHtml(d.note)}${propsHtml(d.props)}`;
     }
     const groupEl = target.closest('.od-group-label, .od-group-handle');
     if (groupEl) {
       const g = m.groups.find((x) => x.key === groupEl.dataset.group);
-      return g.note ? `<b>${esc(g.name)}</b><div class="tt-note">${esc(g.note)}</div>` : null;
+      return g.note || g.props ? `<b>${esc(g.name)}</b>${noteHtml(g.note)}${propsHtml(g.props)}` : null;
     }
     return null;
   }
 
   let tooltipTarget = null;
   function showTooltipFor(e) {
-    const target = e.target.closest('.od-row, .od-table-header, .od-ref-hit, .od-group-label, .od-group-handle');
+    const target = e.target.closest('.od-row, .od-table-header, .od-ref-hit, .od-dep-hit, .od-group-label, .od-group-handle');
     if (!target) return hideTooltip();
     if (target !== tooltipTarget) {
       tooltipTarget = target;
@@ -399,6 +502,7 @@ TableGroup content [color: #0f766e] {
   async function openText(name, text) {
     state.docName = name;
     store.set('docName', name);
+    state.viewName = store.get(`view:${name}`, null);
     state.source = text;
     store.set('source', text);
     state.positions = new Map();
@@ -449,6 +553,13 @@ TableGroup content [color: #0f766e] {
     fit,
     'zoom-in': () => zoomCenter(1.2),
     'zoom-out': () => zoomCenter(1 / 1.2),
+    'toggle-deps': () => setShowDeps(!state.showDeps),
+    'toggle-project': () => {
+      const panel = $('#project-panel');
+      if (panel.hidden && !state.fullModel.project.note) return;
+      panel.hidden = !panel.hidden;
+      $('[data-action="toggle-project"]').setAttribute('aria-pressed', String(!panel.hidden));
+    },
     'toggle-editor': () => {
       document.body.classList.toggle('editor-hidden');
       store.set('editorHidden', document.body.classList.contains('editor-hidden'));
@@ -467,6 +578,51 @@ TableGroup content [color: #0f766e] {
     store.set('detail', state.detail);
     applyModel(state.model);
   });
+
+  // DiagramView picker: shown only when the DBML has views.
+  const viewSelect = $('#view');
+  function renderViewMenu() {
+    const views = state.fullModel.views;
+    viewSelect.hidden = !views.length;
+    viewSelect.innerHTML = '';
+    viewSelect.append(new Option('Whole model', ''));
+    for (const v of views) viewSelect.append(new Option(`View: ${v.name}`, v.name));
+    viewSelect.value = state.viewName || '';
+  }
+  function setView(name, { apply = true } = {}) {
+    state.viewName = name || null;
+    store.set(`view:${state.docName}`, state.viewName);
+    viewSelect.value = state.viewName || '';
+    if (!apply) return;
+    state.positions = new Map();
+    state.fitted = false;
+    renderer.setSelected(null);
+    applyModel(OD.applyView(state.fullModel, state.viewName)).then(showStatus);
+  }
+  viewSelect.addEventListener('change', (e) => setView(e.target.value));
+
+  // Lineage (Dep) lines can be hidden; the choice is remembered.
+  const depsButton = $('[data-action="toggle-deps"]');
+  function setShowDeps(on) {
+    state.showDeps = on;
+    store.set('showDeps', on);
+    svg.classList.toggle('od-hide-deps', !on);
+    depsButton.setAttribute('aria-pressed', String(on));
+  }
+
+  // Project note (Markdown) in a panel over the canvas.
+  function renderProject() {
+    const p = state.fullModel.project;
+    const button = $('[data-action="toggle-project"]');
+    button.hidden = !p.note;
+    depsButton.hidden = !state.fullModel.deps.length;
+    if (!p.note) {
+      $('#project-panel').hidden = true;
+      return;
+    }
+    const meta = [p.name, p.databaseType].filter(Boolean).map(esc).join(' · ');
+    $('#project-body').innerHTML = `${meta ? `<div class="pp-meta">${meta}</div>` : ''}${md(p.note)}`;
+  }
 
   // Auto layout menu: pick an algorithm with the mouse or 1–4; it is remembered for next time.
   const layoutMenu = $('#layout-menu');
@@ -519,6 +675,8 @@ TableGroup content [color: #0f766e] {
       if (a) relayout(a.id);
       else toggleLayoutMenu(false);
     } else if (e.key === 'f') fit();
+    else if (e.key === 'l' && state.fullModel && state.fullModel.deps.length) actions['toggle-deps']();
+    else if (e.key === 'p') actions['toggle-project']();
     else if (e.key === '+' || e.key === '=') zoomCenter(1.2);
     else if (e.key === '-') zoomCenter(1 / 1.2);
     else if (e.key === 'Escape') renderer.setSelected(null);
@@ -546,10 +704,12 @@ TableGroup content [color: #0f766e] {
   if (width) document.documentElement.style.setProperty('--editor-width', width);
   if (store.get('editorHidden')) document.body.classList.add('editor-hidden');
   $('#doc-name').textContent = state.docName;
+  state.viewName = store.get(`view:${state.docName}`, null);
+  setShowDeps(state.showDeps);
   editor.value = state.source;
   renderGutter();
   renderHighlight();
   parse();
 
-  OD.app = { state, renderer, openText, actions, fit, relayout };
+  OD.app = { state, renderer, openText, actions, fit, relayout, setView, md };
 })((window.OD = window.OD || {}));

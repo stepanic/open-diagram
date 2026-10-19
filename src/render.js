@@ -48,6 +48,16 @@
         stroke: ${R.activeColor}; stroke-width: ${R.activeWidth};
       }
       .od-ref.active .od-ref-label { fill: ${R.activeColor}; }
+      .od-ref.inactive .od-ref-line { stroke-dasharray: ${R.inactiveDash}; }
+      .od-ref-optional { fill: ${t.canvas.background}; stroke: ${R.color}; stroke-width: ${R.width}; }
+      .od-ref.active .od-ref-optional, .od-ref:hover .od-ref-optional { stroke: ${R.activeColor}; }
+      .od-dep { opacity: ${t.dep.opacity}; }
+      .od-dep-line { fill: none; stroke-width: ${t.dep.width}; stroke-dasharray: ${t.dep.dash}; }
+      .od-dep-hit { fill: none; stroke: transparent; stroke-width: 12; }
+      .od-dim .od-dep { opacity: ${R.dimOpacity}; }
+      .od-dep.active, .od-dep:hover { opacity: 1; }
+      .od-dep.active .od-dep-line, .od-dep:hover .od-dep-line { stroke-width: ${t.dep.width * 1.6}; }
+      .od-hide-deps .od-deps { display: none; }
       .od-group-label { font-weight: 700; font-size: ${t.group.labelSize}px; dominant-baseline: central; }
       .od-note-bg { fill: ${t.note.background}; stroke: ${t.note.border}; }
       .od-note-title { font-weight: 600; fill: ${t.note.text}; dominant-baseline: central; }
@@ -84,6 +94,7 @@
       this.gridRect = el('rect', { class: 'od-grid', x: -1e5, y: -1e5, width: 2e5, height: 2e5, fill: 'url(#od-grid)' }, this.viewport);
       this.layerGroups = el('g', { class: 'od-groups' }, this.viewport);
       this.layerRefs = el('g', { class: 'od-refs' }, this.viewport);
+      this.layerDeps = el('g', { class: 'od-deps' }, this.viewport);
       this.layerTables = el('g', { class: 'od-tables' }, this.viewport);
     }
 
@@ -115,6 +126,7 @@
     updateDynamic() {
       this.drawGroups();
       this.drawRefs();
+      this.drawDeps();
       if (this.selected) this.markActiveRefs(this.selected);
     }
 
@@ -213,7 +225,7 @@
         const by = G().anchorY(tb, b, r.to.fields[0], this.detail);
         const obstacles = allBoxes.filter(([k]) => k !== r.from.table && k !== r.to.table).map(([, box]) => box);
         const route = G().routeRef(a, ay, b, by, obstacles);
-        const g = el('g', { class: 'od-ref', 'data-ref': r.id }, this.layerRefs);
+        const g = el('g', { class: `od-ref${r.inactive ? ' inactive' : ''}`, 'data-ref': r.id }, this.layerRefs);
         const d = G().roundedPath(route.points, R.radius);
         el('path', { class: 'od-ref-hit', d, 'data-ref': r.id }, g);
         el('path', { class: 'od-ref-line', d, style: r.color ? `stroke:${r.color}` : null }, g);
@@ -223,8 +235,36 @@
           }
         } else {
           el('path', { class: 'od-ref-marker', d: G().markerPath(route.start, r.from.many) + G().markerPath(route.end, r.to.many) }, g);
+          const optional = [[route.start, r.from], [route.end, r.to]].filter(([, ep]) => ep.optional);
+          if (optional.length) el('path', { class: 'od-ref-optional', d: optional.map(([end]) => G().optionalPath(end)).join('') }, g);
         }
         this.refNodes.set(r.id, g);
+      }
+    }
+
+    // Lineage edges: dashed, routed like refs, with an arrow into the derived table.
+    drawDeps() {
+      const D = OD.theme.dep;
+      this.layerDeps.innerHTML = '';
+      this.depNodes = new Map();
+      const allBoxes = [...this.positions.keys()].map((k) => [k, this.box(k)]).filter(([, b]) => b);
+      for (const dep of this.model.deps) {
+        const a = this.box(dep.from.table);
+        const b = this.box(dep.to.table);
+        if (!a || !b) continue;
+        const ta = this.model.tableByKey.get(dep.from.table);
+        const tb = this.model.tableByKey.get(dep.to.table);
+        const ay = G().anchorY(ta, a, dep.from.fields[0], this.detail);
+        const by = G().anchorY(tb, b, dep.to.fields[0], this.detail);
+        const obstacles = allBoxes.filter(([k]) => k !== dep.from.table && k !== dep.to.table).map(([, box]) => box);
+        const route = G().routeRef(a, ay, b, by, obstacles);
+        const color = dep.color || D.color;
+        const g = el('g', { class: 'od-dep', 'data-dep': dep.id }, this.layerDeps);
+        const d = G().roundedPath(route.points, OD.theme.ref.radius);
+        el('path', { class: 'od-dep-hit', d, 'data-dep': dep.id }, g);
+        el('path', { class: 'od-dep-line', d, stroke: color }, g);
+        el('path', { class: 'od-dep-arrow', d: G().arrowPath(route.end, D.arrow), fill: color }, g);
+        this.depNodes.set(dep.id, g);
       }
     }
 
@@ -239,6 +279,10 @@
       for (const r of this.model.refs) {
         const n = this.refNodes.get(r.id);
         if (n) n.classList.toggle('active', !!key && (r.from.table === key || r.to.table === key));
+      }
+      for (const dep of this.model.deps) {
+        const n = this.depNodes && this.depNodes.get(dep.id);
+        if (n) n.classList.toggle('active', !!key && (dep.from.table === key || dep.to.table === key));
       }
     }
 
@@ -256,7 +300,7 @@
       clone.querySelector('.od-viewport').removeAttribute('transform');
       clone.classList.remove('od-dim');
       clone.querySelectorAll('.selected, .active').forEach((n) => n.classList.remove('selected', 'active'));
-      clone.querySelectorAll('.od-ref-hit, .od-group-handle').forEach((n) => n.remove());
+      clone.querySelectorAll('.od-ref-hit, .od-dep-hit, .od-group-handle').forEach((n) => n.remove());
       clone.setAttribute('xmlns', NS);
       clone.setAttribute('viewBox', `${bb.x - padding} ${bb.y - padding} ${bb.w + padding * 2} ${bb.h + padding * 2}`);
       clone.setAttribute('width', Math.ceil(bb.w + padding * 2));
