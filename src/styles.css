@@ -108,6 +108,13 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .layout-menu button.current .lm-name { color: var(--accent); }
 .layout-menu button.current .lm-name::after { content: ' ✓'; }
 .layout-menu .lm-icon { width: 22px; height: 22px; grid-row: 1 / span 2; }
+.url-menu { width: 440px; }
+.url-form { display: flex; gap: 6px; padding: 6px 14px; }
+.url-form input { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; outline: none; }
+.url-form input:focus { border-color: var(--accent); }
+.toolbar .url-menu button { display: inline-block; width: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; background: var(--bg); }
+.toolbar .url-menu button:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
+.url-hint { margin: 2px 14px 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .layout-menu .lm-name { font-weight: 600; }
 .layout-menu kbd {
   font: 11px var(--mono);

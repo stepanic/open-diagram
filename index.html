@@ -15,6 +15,18 @@
       <button data-action="toggle-project" title="Project note (P)" hidden>Project</button>
       <button data-action="open" title="Open .dbml or .layout.json (⌘O)">Open</button>
       <button data-action="save-dbml" title="Download DBML (⌘S)">Save</button>
+      <span class="menu-anchor">
+        <button data-action="url-menu" title="Open a .dbml from a URL (GitHub links work) or copy a link to share">URL ▾</button>
+        <div id="url-menu" class="layout-menu url-menu" role="dialog" hidden>
+          <div class="lm-title">Open DBML from a URL</div>
+          <form id="url-form" class="url-form">
+            <input id="url-input" type="text" placeholder="https://github.com/owner/repo/blob/main/schema.dbml" spellcheck="false" autocomplete="off">
+            <button type="submit">Open</button>
+          </form>
+          <p class="url-hint">GitHub, Gist and GitLab file links are read from their raw file; any other server has to allow cross-origin requests. A <code>.layout.json</code> next to the <code>.dbml</code> is used too.</p>
+          <div class="url-form"><button type="button" id="url-copy" title="Open a DBML from a URL first; edited text has no link">Copy share link</button></div>
+        </div>
+      </span>
     </div>
     <div class="group">
       <span class="menu-anchor">

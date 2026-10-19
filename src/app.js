@@ -83,6 +83,7 @@ TableGroup content [color: #0f766e] {
     positions: new Map(),
     view: { x: 0, y: 0, k: 1 },
     fitted: false,
+    remote: null, // URL the document was opened from, while it is unedited
   };
 
   const svg = $('#diagram');
@@ -161,6 +162,7 @@ TableGroup content [color: #0f766e] {
     renderHighlight();
     if (!searchBar.hidden) runSearch({ jump: false });
     clearTimeout(parseTimer);
+    if (state.remote) forgetRemote();
     parseTimer = setTimeout(() => {
       state.source = editor.value;
       store.set('source', state.source);
@@ -864,6 +866,7 @@ TableGroup content [color: #0f766e] {
   const baseName = () => state.docName.replace(/\.dbml$/i, '') || 'diagram';
 
   async function openText(name, text) {
+    forgetRemote();
     state.docName = name;
     store.set('docName', name);
     state.viewName = store.get(`view:${name}`, null);
@@ -883,6 +886,116 @@ TableGroup content [color: #0f766e] {
     if (/\.json$/i.test(file.name)) return importLayout(JSON.parse(text));
     await openText(file.name, text);
   }
+
+  // ---- open from a URL ---------------------------------------------------------------
+  // ?url= loads a .dbml from any URL that allows cross-origin requests. GitHub, Gist and GitLab
+  // page links are rewritten to their raw files, so a schema on GitHub can be shared as
+  // index.html?url=<its GitHub link>. A .layout.json next to the .dbml is used when this
+  // browser has no positions of its own for that file.
+
+  function rawUrl(input) {
+    let s = String(input || '').trim();
+    if (!s) return null;
+    if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+    let u;
+    try {
+      u = new URL(s);
+    } catch {
+      return null;
+    }
+    if (u.searchParams.get('url')) return rawUrl(u.searchParams.get('url')); // a share link of this app
+    const p = u.pathname.split('/').filter(Boolean);
+    if (u.hostname === 'github.com' && (p[2] === 'blob' || p[2] === 'raw') && p.length > 4) {
+      return `https://raw.githubusercontent.com/${p[0]}/${p[1]}/${p.slice(3).join('/')}`;
+    }
+    if (u.hostname === 'gist.github.com' && p.length === 2) return `https://gist.githubusercontent.com/${p[0]}/${p[1]}/raw`;
+    const dash = p.indexOf('-');
+    if (dash > 1 && p[dash + 1] === 'blob') {
+      p[dash + 1] = 'raw';
+      return `${u.origin}/${p.join('/')}`;
+    }
+    u.hash = '';
+    return u.href;
+  }
+
+  // ':' and '/' stay readable in the query string.
+  const queryValue = (v) => encodeURIComponent(v).replace(/%2F/g, '/').replace(/%3A/g, ':');
+  const shareLink = () =>
+    `${location.href.split(/[?#]/)[0]}?url=${queryValue(state.remote)}${state.viewName ? `&view=${queryValue(state.viewName)}` : ''}`;
+
+  function forgetRemote() {
+    if (!state.remote) return;
+    state.remote = null;
+    $('#doc-name').removeAttribute('title');
+    history.replaceState(null, '', location.href.split(/[?#]/)[0]);
+  }
+
+  async function fetchText(url) {
+    const res = await fetch(url, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
+  }
+
+  // Resolves to null, or to the error it also shows in the status line.
+  async function openUrl(input, { view = null, layout = null } = {}) {
+    const fail = (message) => {
+      setStatus(message, 'error');
+      return message;
+    };
+    const raw = rawUrl(input);
+    if (!raw) return fail(`Not a URL: ${input}`);
+    setStatus(`Loading ${raw}…`);
+    let text;
+    try {
+      text = await fetchText(raw);
+    } catch (err) {
+      return fail(`Could not load ${raw} (${err.message}). The server has to allow cross-origin requests; GitHub raw files do.`);
+    }
+    const name = decodeURIComponent(new URL(raw).pathname.slice(1)) || raw;
+    const ownLayout = Object.keys(store.get(`positions:${name}`, {})).length > 0;
+    await openText(name, text);
+    state.remote = String(input).trim();
+    $('#doc-name').title = raw;
+    if (view && state.fullModel && state.fullModel.views.some((v) => v.name === view)) await setView(view);
+    history.replaceState(null, '', shareLink());
+    const layoutUrl = layout ? rawUrl(layout) : !ownLayout && /\.dbml$/i.test(raw) ? raw.replace(/\.dbml$/i, '.layout.json') : null;
+    if (layoutUrl && state.model) {
+      try {
+        importLayout(JSON.parse(await fetchText(layoutUrl)));
+      } catch (err) {
+        if (layout) return fail(`Could not load layout ${layoutUrl} (${err.message})`);
+      }
+    }
+    return null;
+  }
+
+  const urlMenu = $('#url-menu');
+  const urlInput = $('#url-input');
+  function toggleUrlMenu(open = urlMenu.hidden) {
+    urlMenu.hidden = !open;
+    if (!open) return;
+    urlInput.value = state.remote || '';
+    $('#url-copy').disabled = !state.remote;
+    urlInput.focus();
+    urlInput.select();
+  }
+  $('#url-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    toggleUrlMenu(false);
+    openUrl(urlInput.value);
+  });
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') toggleUrlMenu(false);
+  });
+  $('#url-copy').addEventListener('click', async () => {
+    toggleUrlMenu(false);
+    try {
+      await navigator.clipboard.writeText(shareLink());
+      setStatus('Share link copied');
+    } catch {
+      setStatus(shareLink());
+    }
+  });
 
   function importLayout(data) {
     const positions = data.positions || data;
@@ -915,6 +1028,7 @@ TableGroup content [color: #0f766e] {
     'save-layout': () => download(`${baseName()}.layout.json`, new Blob([JSON.stringify({ positions: Object.fromEntries(state.positions) }, null, 2)], { type: 'application/json' })),
     'auto-layout': () => toggleLayoutMenu(),
     'export-menu': () => (exportMenu.hidden = !exportMenu.hidden),
+    'url-menu': () => toggleUrlMenu(),
     'toggle-problems': () => {
       store.set('problemsOpen', problemsEl.classList.toggle('collapsed') === false);
     },
@@ -997,7 +1111,8 @@ TableGroup content [color: #0f766e] {
     state.positions = new Map();
     state.fitted = false;
     renderer.setSelected(null);
-    applyModel(OD.applyView(state.fullModel, state.viewName)).then(() => {
+    if (state.remote) history.replaceState(null, '', shareLink());
+    return applyModel(OD.applyView(state.fullModel, state.viewName)).then(() => {
       showStatus();
       if (focusedLine) focusLine(focusedLine, { reveal: false });
     });
@@ -1055,6 +1170,7 @@ TableGroup content [color: #0f766e] {
   document.addEventListener('pointerdown', (e) => {
     if (!layoutMenu.hidden && !e.target.closest('#layout-menu, [data-action="auto-layout"]')) toggleLayoutMenu(false);
     if (!exportMenu.hidden && !e.target.closest('#export-menu, [data-action="export-menu"]')) exportMenu.hidden = true;
+    if (!urlMenu.hidden && !e.target.closest('#url-menu, [data-action="url-menu"]')) toggleUrlMenu(false);
   }, true);
 
   window.addEventListener('dragover', (e) => e.preventDefault());
@@ -1126,7 +1242,10 @@ TableGroup content [color: #0f766e] {
   editor.value = state.source;
   renderGutter();
   renderHighlight();
-  parse();
+  const params = new URLSearchParams(location.search);
+  if (params.get('url')) openUrl(params.get('url'), { view: params.get('view'), layout: params.get('layout') }).then((err) => err && parse().then(() => setStatus(err, 'error')));
+  else parse();
 
-  OD.app = { state, renderer, openText, actions, fit, relayout, setView, md, focusLine, openSearch };
+  OD.rawUrl = rawUrl;
+  OD.app = { state, renderer, openText, openUrl, actions, fit, relayout, setView, md, focusLine, openSearch };
 })((window.OD = window.OD || {}));
