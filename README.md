@@ -11,6 +11,9 @@ Open `index.html` directly (`file://` works).
 - **Drag** a table by any part of it; drag a TableGroup by its title to move the whole group.
 - **Scroll** pans, **pinch** or **⌘/Ctrl + scroll** zooms, **F** fits, **Esc** clears the selection.
 - **Click** a table to highlight its refs, **double-click** to jump to it in the editor.
+- **Follow** (or **Z**): the canvas zooms to the element under the editor caret, between 50 % and
+  125 %; a field fits its table, a ref both tables. Moving within the same table only pans if the
+  row leaves the screen. A manual pan or zoom pauses it until the caret reaches another element.
 - **Hover** a field, header, ref or group title for notes, flags, defaults, enum values and refs.
 - **Problems** under the editor: checks the parser does not make (no primary key, duplicate index or
   index name, `not null` with `default: null`, refs between different types, `set null` on a
@@ -71,3 +74,4 @@ Open Diagram: MIT. Bundled in `vendor/`: [`@dbml/core`](https://github.com/holis
 
 - [docs/2026-10-17-renderer-odluke.md](docs/2026-10-17-renderer-odluke.md): odluke, mjerenja rasporeda, zamke, otvorene stavke
 - [docs/2026-10-19-dbml-znacajke.md](docs/2026-10-19-dbml-znacajke.md): sve značajke DBML-a, što Open Diagram od njih prikazuje, što dodati
+- [docs/2026-10-19-embed.md](docs/2026-10-19-embed.md): prijedlog read-only ugradnje dijagrama u druge web stranice
