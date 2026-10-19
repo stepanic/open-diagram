@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 import { readFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { sourcesHash } from './embed-sources.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const dbmlPath = path.resolve(process.argv[2] || path.join(root, 'examples/open-ledger.dbml'));
@@ -505,11 +506,13 @@ const embedErrors = [];
 const elkLoads = [];
 embed.on('pageerror', (e) => embedErrors.push(String(e)));
 embed.on('console', (m) => m.type() === 'error' && embedErrors.push(m.text()));
-await embed.route('http://embed.test/**', (route) => {
-  const rel = decodeURIComponent(new URL(route.request().url()).pathname).slice(1);
-  if (rel.endsWith('elk.bundled.js')) elkLoads.push(rel);
+// http://embed.test/ serves the repo, as GitHub Pages serves the site.
+const serveRepo = (route) => {
+  const rel = decodeURIComponent(new URL(route.request().url()).pathname).slice(1) || 'index.html';
+  if (/elk(\.bundled)?\.js$/.test(rel)) elkLoads.push(rel);
   route.fulfill({ path: path.join(root, rel) });
-});
+};
+await embed.route('http://embed.test/**', serveRepo);
 const embedState = () => embed.evaluate(() => [...document.querySelectorAll('open-diagram')].map((e) => ({
   id: e.id,
   tables: e.shadowRoot.querySelectorAll('.od-table').length,
@@ -552,6 +555,65 @@ check('plain wheel over an embed leaves the view alone (page scrolls)', !scrolle
 check('no errors on the embed page', embedErrors.length === 0, embedErrors.join(' | '));
 await embed.screenshot({ path: path.join(outDir, 'embed.png'), fullPage: true });
 await embed.close();
+
+// Share: a #dbml= link for edited text, the <iframe> and <open-diagram> snippets, dist/.
+const share = await context.newPage();
+const shareErrors = [];
+const watch = (p) => {
+  p.on('pageerror', (e) => shareErrors.push(String(e)));
+  p.on('console', (m) => m.type() === 'error' && shareErrors.push(m.text()));
+};
+watch(share);
+await share.route('http://embed.test/**', serveRepo);
+await share.goto('http://embed.test/index.html');
+await share.waitForFunction(() => OD.app && OD.app.state.model);
+const made = await share.evaluate(async (text) => {
+  await OD.app.openText('shop & co.dbml', text);
+  OD.app.state.positions.set('orders', { x: 700.4, y: 55.6 });
+  OD.app.renderer.render(OD.app.state.positions);
+  return { link: await OD.app.shareUrl(), iframe: await OD.app.embedSnippet('iframe'), element: await OD.app.embedSnippet('element') };
+}, 'Table customers {\n  id int [pk]\n  name varchar [note: \'<b>&\']\n}\nTable orders {\n  id int [pk]\n  customer_id int [ref: > customers.id]\n}\n');
+await share.close();
+// A fresh browser profile, so nothing can come from localStorage.
+const fresh = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+await fresh.route('http://embed.test/**', serveRepo);
+await fresh.route('http://embed.test/snippet.html', (route) => route.fulfill({ contentType: 'text/html', body: `<!doctype html><meta charset="utf-8"><body>${made.element}</body>` }));
+const other = await fresh.newPage();
+watch(other);
+await other.goto(made.link);
+await other.waitForFunction(() => OD.app && OD.app.state.model && OD.app.state.model.tables.length === 2, null, { timeout: 5000 }).catch(() => {});
+const sh1 = await other.evaluate(() => ({ doc: OD.app.state.docName, orders: OD.app.state.positions.get('orders'), hash: location.hash, note: OD.app.state.model.tableByKey.get('customers').fieldByName.get('name').note }));
+check('#dbml= share link opens the edited text with its layout', /^http:\/\/embed\.test\/#dbml=/.test(made.link) && sh1.doc === 'shop & co.dbml' && sh1.orders && sh1.orders.x === 700 && sh1.orders.y === 56 && sh1.note === '<b>&' && sh1.hash === '', `${made.link.length} chars, ${JSON.stringify(sh1)}`);
+const iframeSrc = (made.iframe.match(/ src="([^"]+)"/) || [])[1] || '';
+await other.goto(iframeSrc.replace(/&amp;/g, '&'));
+const embedOf = (p, sel) => p.evaluate((sel) => {
+  const el = document.querySelector(sel);
+  return { tables: el.shadowRoot.querySelectorAll('.od-table').length, orders: el.renderer.positions.get('orders'), open: el.shadowRoot.querySelector('a').hidden ? '' : el.shadowRoot.querySelector('a').href, message: el.shadowRoot.querySelector('.message').hidden ? '' : el.shadowRoot.querySelector('.message').textContent };
+}, sel);
+await other.waitForFunction(() => document.querySelector('#diagram').shadowRoot.querySelectorAll('.od-table').length === 2, null, { timeout: 5000 }).catch(() => {});
+const sh2 = await embedOf(other, '#diagram');
+check('<iframe> snippet: embed.html draws the hash with its layout', iframeSrc.startsWith('http://embed.test/embed.html#dbml=') && sh2.tables === 2 && sh2.orders && sh2.orders.x === 700 && sh2.open.startsWith('http://embed.test/#dbml='), JSON.stringify(sh2));
+await other.goto('http://embed.test/embed.html#src=examples/open-ledger.dbml&detail=keys');
+await other.waitForFunction(() => document.querySelector('#diagram').shadowRoot.querySelectorAll('.od-table').length > 5, null, { timeout: 5000 }).catch(() => {});
+const sh3 = await embedOf(other, '#diagram');
+check('embed.html#src= loads a file and links to ?url=', sh3.tables > 5 && sh3.open.includes('?url=http%3A%2F%2Fembed.test%2Fexamples%2Fopen-ledger.dbml'), `${sh3.tables} tables, ${sh3.open}`);
+await other.goto('http://embed.test/embed.html#dbml=!!');
+await other.waitForTimeout(300);
+const sh4 = await other.evaluate(() => ({ note: document.querySelector('#note').hidden ? '' : document.querySelector('#note').textContent, diagram: !document.querySelector('#diagram').hidden }));
+check('embed.html with a damaged hash says so', /^This link is damaged/.test(sh4.note) && !sh4.diagram, JSON.stringify(sh4));
+const bundle = readFileSync(path.join(root, 'dist/open-diagram-embed.js'), 'utf8');
+check('dist/open-diagram-embed.js is built from the current src (npm run build)', bundle.includes(`Sources: ${sourcesHash()} */`), (bundle.match(/Sources: (\w+)/) || [])[1]);
+elkLoads.length = 0;
+await other.goto('http://embed.test/snippet.html');
+await other.waitForFunction(() => { const el = document.querySelector('open-diagram'); return el && el.renderer && el.shadowRoot.querySelectorAll('.od-table').length === 2; }, null, { timeout: 5000 }).catch(() => {});
+const sh5 = await embedOf(other, 'open-diagram');
+check('<open-diagram> snippet works with the dist bundle alone, without ELK', made.element.includes('http://embed.test/dist/open-diagram-embed.js') && sh5.tables === 2 && sh5.orders && sh5.orders.x === 700 && elkLoads.length === 0, JSON.stringify(sh5));
+await other.evaluate(() => document.querySelector('open-diagram').setAttribute('algorithm', 'left-right'));
+await other.evaluate(() => document.querySelector('open-diagram').removeAttribute('layout'));
+await other.waitForFunction(() => window.ELK, null, { timeout: 5000 }).catch(() => {});
+check('the bundle loads ELK from dist/elk.js', elkLoads.join() === 'dist/elk.js', elkLoads.join());
+check('no errors while sharing and embedding', shareErrors.length === 0, shareErrors.join(' | '));
+await fresh.close();
 
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
