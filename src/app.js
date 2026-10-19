@@ -117,6 +117,30 @@ TableGroup content [color: #0f766e] {
     highlight.scrollLeft = editor.scrollLeft;
     searchMarks.scrollTop = editor.scrollTop;
     searchMarks.scrollLeft = editor.scrollLeft;
+    placeLineMark();
+  }
+
+  // Diagram → source: a band on the line a clicked element comes from. The editor does not take
+  // focus, so canvas shortcuts (F, +, -) keep working instead of typing into the DBML.
+  const lineMark = $('#line-mark');
+  let markedLine = 0;
+
+  function placeLineMark() {
+    lineMark.hidden = !markedLine;
+    if (!markedLine) return;
+    const lh = parseFloat(getComputedStyle(editor).lineHeight);
+    lineMark.style.top = `${parseFloat(getComputedStyle(editor).paddingTop) + (markedLine - 1) * lh - editor.scrollTop}px`;
+  }
+
+  function markSourceLine(line) {
+    markedLine = line || 0;
+    if (markedLine) {
+      const lh = parseFloat(getComputedStyle(editor).lineHeight);
+      const top = (markedLine - 1) * lh;
+      if (top < editor.scrollTop || top > editor.scrollTop + editor.clientHeight - lh * 2) editor.scrollTop = Math.max(0, top - editor.clientHeight / 3);
+      editor.scrollLeft = 0;
+    }
+    syncScroll();
   }
 
   function jumpToLine(line) {
@@ -273,6 +297,7 @@ TableGroup content [color: #0f766e] {
     if (document.activeElement !== editor) return;
     cancelAnimationFrame(caretFrame);
     caretFrame = requestAnimationFrame(() => {
+      if (markedLine) markSourceLine(0);
       const line = caretLine();
       if (line !== focusedLine) focusLine(line);
     });
@@ -454,6 +479,7 @@ TableGroup content [color: #0f766e] {
       drag = { kind: 'pan', origin: { ...state.view }, start };
     }
     drag.moved = false;
+    drag.target = e.target;
     svg.setPointerCapture(e.pointerId);
     hideTooltip();
   });
@@ -488,16 +514,40 @@ TableGroup content [color: #0f766e] {
     if (!drag.moved) {
       clearFocus();
       renderer.setSelected(drag.clickKey || null);
+      const line = sourceLineOf(drag.target);
+      markSourceLine(line);
+      if (line) focusLine(line, { reveal: false });
     }
     drag = null;
   });
 
+  // Source line of the diagram element under `target`: field row, ref, dep, group title,
+  // table header or sticky note.
+  function sourceLineOf(target) {
+    const m = state.model;
+    if (!m || !target || !target.closest) return null;
+    const row = target.closest('.od-row');
+    if (row) return m.tableByKey.get(row.dataset.key).fieldByName.get(row.dataset.field).line;
+    const ref = target.closest('.od-ref-hit');
+    if (ref) return m.refs.find((r) => r.id === ref.dataset.ref).line;
+    const dep = target.closest('.od-dep-hit');
+    if (dep) return m.deps.find((d) => d.id === dep.dataset.dep).line;
+    const grp = target.closest('.od-group-handle, .od-group-label');
+    if (grp) return m.groups.find((g) => g.key === grp.dataset.group).line;
+    const node = target.closest('.od-table');
+    if (node) {
+      const item = m.tableByKey.get(node.dataset.key) || m.notes.find((n) => n.key === node.dataset.key);
+      return item && item.line;
+    }
+    return null;
+  }
+
+  // Double click: into the editor at that line, ready to edit.
   svg.addEventListener('dblclick', (e) => {
-    const tableEl = e.target.closest('.od-table');
-    if (!tableEl) return;
-    const key = tableEl.dataset.key;
-    const item = state.model.tableByKey.get(key) || state.model.notes.find((n) => n.key === key);
-    jumpToLine(item && item.line);
+    const line = sourceLineOf(e.target);
+    if (!line) return;
+    markSourceLine(0);
+    jumpToLine(line);
   });
 
   // ---- tooltip -----------------------------------------------------------------------
@@ -859,6 +909,7 @@ TableGroup content [color: #0f766e] {
     else if (e.key === '-') zoomCenter(1 / 1.2);
     else if (e.key === 'Escape') {
       clearFocus();
+      markSourceLine(0);
       renderer.setSelected(null);
     }
   });

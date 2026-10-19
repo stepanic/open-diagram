@@ -182,6 +182,15 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 }
 
 .search-marks { color: transparent; }
+.line-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: rgba(245, 158, 11, 0.18);
+  border-left: 3px solid #f59e0b;
+  pointer-events: none;
+}
 .search-marks mark { color: transparent; background: rgba(250, 204, 21, 0.35); border-radius: 2px; }
 .search-marks mark.cur { background: rgba(249, 115, 22, 0.6); }
 

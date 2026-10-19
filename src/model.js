@@ -58,6 +58,7 @@
           checks: checksOf(f.checks),
           props: props(f.metadata),
           partial: f.injectedPartial ? f.injectedPartial.name : null,
+          line: f.token ? f.token.start.line : null,
           fk: false,
           referenced: false,
         }));
@@ -131,6 +132,7 @@
           onUpdate: r.onUpdate || null,
           color: r.color || null,
           inactive: !!r.inactive,
+          line: r.token ? r.token.start.line : null,
         });
       }
 
@@ -151,6 +153,7 @@
             color: d.color || null,
             note: d.note || null,
             props: props(d.metadata),
+            line: e.token ? e.token.start.line : null,
           });
         }
         locate(d, { kind: 'dep', ids });
@@ -163,6 +166,7 @@
           color: g.color || null,
           note: g.note || null,
           props: props(g.metadata),
+          line: g.token ? g.token.start.line : null,
           tables: g.tables.map((t) => qualify(t.schema.name, t.name)),
         };
         group.tables.forEach((k) => tableByKey.has(k) && (tableByKey.get(k).group = group.key));

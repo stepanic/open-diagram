@@ -138,3 +138,8 @@ Stanje po značajkama je u `docs/2026-10-19-dbml-znacajke.md`. Ovdje samo zamke:
   tablici istakne samo tablicu.
 - Inline ref ima isti redak kao polje; tada pobjeđuje polje, koje ionako istakne i svoje refove.
 - Pogodak pretrage također pomiče isticanje na dijagramu.
+- **Obrnuti smjer (dijagram → source):** klik na polje, ref, Dep liniju, naslov grupe, zaglavlje
+  tablice ili bilješku označi narančastom trakom (`#line-mark`) redak iz kojeg element dolazi
+  (`field.line`, `ref.line`, `dep.line`, `group.line`) i istakne ga na dijagramu. Editor namjerno
+  ne dobiva fokus: inače bi tipke platna (F, +, -) upisivale znakove u DBML. Dvoklik skače u
+  editor na taj redak (s fokusom) za uređivanje. Polje iz partiala vodi na redak u `TablePartial`.

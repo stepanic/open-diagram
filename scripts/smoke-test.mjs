@@ -343,6 +343,38 @@ await page.keyboard.press('Escape');
 const s4 = await page.evaluate(() => ({ hidden: document.querySelector('#search').hidden, marks: document.querySelectorAll('#search-marks mark').length, active: document.activeElement.id }));
 check('Escape closes search back to the editor', s4.hidden && !s4.marks && s4.active === 'editor', JSON.stringify(s4));
 
+// Diagram → source: a click marks the element's line in the editor without taking focus.
+const markedText = () =>
+  page.evaluate(() => {
+    const mark = document.querySelector('#line-mark');
+    if (mark.hidden) return null;
+    const ed = document.querySelector('#editor');
+    const lh = parseFloat(getComputedStyle(ed).lineHeight);
+    const line = Math.round((parseFloat(mark.style.top) - parseFloat(getComputedStyle(ed).paddingTop) + ed.scrollTop) / lh) + 1;
+    return { text: ed.value.split('\n')[line - 1], active: document.activeElement.id };
+  });
+await page.evaluate(() => OD.app.fit());
+await page.waitForTimeout(100);
+const own = await page.evaluate(() => {
+  for (const t of OD.app.state.model.tables) for (const f of t.fields) if (!f.partial && f.line) return { t: t.key, f: f.name };
+});
+await page.locator(`.od-row[data-key="${own.t}"][data-field="${own.f}"]`).click({ force: true });
+const m1 = await markedText();
+check('click on a field marks its source line', !!m1 && m1.text.includes(own.f) && m1.active !== 'editor', m1 && m1.text.trim().slice(0, 60));
+if (extra.deps) {
+  const pt = await page.evaluate(() => {
+    const p = document.querySelector('.od-dep-hit');
+    const q = p.getPointAtLength(p.getTotalLength() / 2);
+    const s = new DOMPoint(q.x, q.y).matrixTransform(p.getScreenCTM());
+    return { x: s.x, y: s.y };
+  });
+  await page.mouse.click(pt.x, pt.y);
+  const m2 = await markedText();
+  check('click on a dep marks its source line', !!m2 && /->|<-|dep/.test(m2.text), m2 && m2.text.trim().slice(0, 60));
+}
+await page.keyboard.press('Escape');
+check('Escape clears the source mark', (await markedText()) === null);
+
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
 
