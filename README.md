@@ -12,6 +12,15 @@ Open `index.html` directly (`file://` works).
 - **Scroll** pans, **pinch** or **⌘/Ctrl + scroll** zooms, **F** fits, **Esc** clears the selection.
 - **Click** a table to highlight its refs, **double-click** to jump to it in the editor.
 - **Hover** a field, header, ref or group title for notes, flags, defaults, enum values and refs.
+- **Problems** under the editor: checks the parser does not make (no primary key, duplicate index or
+  index name, `not null` with `default: null`, refs between different types, `set null` on a
+  `not null` column, one-to-one refs on non-unique columns, foreign keys without an index, unused
+  enums) and refs that column names suggest (`user_id` → `users.id`). Click one to jump to its line;
+  **Add N refs** appends the suggested `Ref:` lines at the end of the source for review (⌘Z undoes).
+- **Export ▾**: Mermaid `erDiagram` (`.mmd`, plus a fenced block on the clipboard), Markdown
+  documentation (project note, Mermaid diagram, every table with fields, indexes and refs, enums),
+  and SQL for PostgreSQL, MySQL, SQL Server or Oracle. Mermaid and Markdown follow the current
+  DiagramView; SQL is always the whole model.
 - **Detail**: all fields, keys only (PK/FK/referenced), or names only.
 - **Auto layout** discards manual positions and offers four algorithms (keys **1–4** while the menu
   is open): **Left-right** (follows foreign keys), **Pipeline** (groups as stages left to right,
@@ -31,6 +40,8 @@ All visual decisions are in [`src/theme.js`](src/theme.js): fonts, sizes, colour
 | File | Role |
 | --- | --- |
 | `src/model.js` | DBML → plain model (tables, refs, groups, notes, enums) via `@dbml/core` |
+| `src/lint.js` | schema checks and ref suggestions for the Problems panel |
+| `src/export.js` | Mermaid `erDiagram` and Markdown documentation |
 | `src/geometry.js` | box sizes, ref routing with obstacle avoidance, markers |
 | `src/layout.js` | the four auto layouts (ELK layered, stack, spiral, shelf packing), groups first, then the whole diagram |
 | `src/render.js` | SVG drawing and export |
@@ -47,7 +58,8 @@ npm test -- my.dbml    # same on another file
 ```
 
 `vendor/` is committed so the app runs without `npm install`. The `@dbml/core` bundle leaves out
-its SQL importers (ANTLR, ~34 MB), so it is ~0.5 MB; only DBML is parsed.
+its SQL importers (ANTLR, ~34 MB), so it is ~0.6 MB: DBML is parsed, and SQL can be exported
+but not imported.
 
 ## Licences
 

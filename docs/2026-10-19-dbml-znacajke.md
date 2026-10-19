@@ -220,3 +220,11 @@ projekta, `checks`, svojstva, records) napravljene su istog dana. Ostaje:
 3. Custom svojstva sticky bilješki i oznaka na tablici (npr. „pii").
 4. Enum kao vlastiti blok na platnu (sad samo u tooltipu polja).
 5. Moduli (`use`/`reuse`): nema pristupa susjednim datotekama.
+
+## Dodano iz usporedbe s drawdb-om (2026-10-19)
+
+Panel s problemima (`src/lint.js`), prijedlog refova po imenima stupaca, izvoz u Mermaid i
+Markdown (`src/export.js`) te SQL izvoz (`ModelExporter` iz `@dbml/core`, bundle +110 KB).
+Što parser 10.x već sam odbija, pa lint to ne ponavlja: duplicirana tablica, stupac i ref,
+prazan enum, ref na nepostojeći stupac. SQL **uvoz** nije dodan: treba ANTLR parsere (~34 MB).
+Mermaid izvoz provjeren na open-ledgeru s Mermaidom 11 (parse i render bez greške).
