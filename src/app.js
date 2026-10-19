@@ -43,6 +43,15 @@ TableGroup content [color: #0f766e] {
 }
 `;
 
+  // 24×24 stroke icons for the auto layout menu.
+  const icon = (body) => `<svg class="lm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+  const LAYOUT_ICONS = {
+    'left-right': icon('<rect x="2" y="3" width="6" height="6" rx="1.5"/><rect x="2" y="15" width="6" height="6" rx="1.5"/><rect x="16" y="9" width="6" height="6" rx="1.5"/><path d="M8 6h3v12H8M11 12h5"/>'),
+    pipeline: icon('<circle cx="4" cy="7" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="20" cy="7" r="2"/><circle cx="4" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="20" cy="17" r="2"/><path d="M6 7h4M14 7h4M6 17h4M14 17h4"/>'),
+    snowflake: icon('<rect x="9.5" y="9.5" width="5" height="5" rx="1"/><circle cx="12" cy="3" r="1.8"/><circle cx="12" cy="21" r="1.8"/><circle cx="3" cy="12" r="1.8"/><circle cx="21" cy="12" r="1.8"/><path d="M12 4.8v4.7M12 14.5v4.7M4.8 12h4.7M14.5 12h4.7"/>'),
+    compact: icon('<rect x="3" y="3" width="5" height="5" rx="1"/><rect x="10" y="3" width="5" height="5" rx="1"/><rect x="17" y="3" width="4" height="5" rx="1"/><rect x="3" y="10" width="5" height="5" rx="1"/><rect x="10" y="10" width="5" height="5" rx="1"/><rect x="17" y="10" width="4" height="5" rx="1"/><rect x="3" y="17" width="5" height="4" rx="1"/><rect x="10" y="17" width="5" height="4" rx="1"/><rect x="17" y="17" width="4" height="4" rx="1"/>'),
+  };
+
   const store = {
     get(key, fallback = null) {
       try {
@@ -65,6 +74,7 @@ TableGroup content [color: #0f766e] {
     docName: store.get('docName', 'untitled'),
     source: store.get('source', SAMPLE),
     detail: store.get('detail', 'all'),
+    algorithm: store.get('layoutAlgorithm', 'left-right'),
     model: null,
     positions: new Map(),
     view: { x: 0, y: 0, k: 1 },
@@ -74,6 +84,7 @@ TableGroup content [color: #0f766e] {
   const svg = $('#diagram');
   const editor = $('#editor');
   const gutter = $('#gutter');
+  const highlight = $('#highlight');
   const statusEl = $('#status');
   const tooltip = $('#tooltip');
   const renderer = new OD.Renderer(svg);
@@ -87,7 +98,19 @@ TableGroup content [color: #0f766e] {
     let html = '';
     for (let i = 1; i <= count; i++) html += `<div${errorLines.has(i) ? ' class="err"' : ''}>${i}</div>`;
     gutter.innerHTML = html;
+    syncScroll();
+  }
+
+  // The trailing line keeps the highlight as tall as the textarea's scroll range.
+  function renderHighlight() {
+    highlight.innerHTML = `${OD.highlightDbml(editor.value)}\n `;
+    syncScroll();
+  }
+
+  function syncScroll() {
     gutter.scrollTop = editor.scrollTop;
+    highlight.scrollTop = editor.scrollTop;
+    highlight.scrollLeft = editor.scrollLeft;
   }
 
   function jumpToLine(line) {
@@ -103,6 +126,7 @@ TableGroup content [color: #0f766e] {
   let parseTimer = null;
   editor.addEventListener('input', () => {
     renderGutter();
+    renderHighlight();
     clearTimeout(parseTimer);
     parseTimer = setTimeout(() => {
       state.source = editor.value;
@@ -110,7 +134,7 @@ TableGroup content [color: #0f766e] {
       parse();
     }, 300);
   });
-  editor.addEventListener('scroll', () => (gutter.scrollTop = editor.scrollTop));
+  editor.addEventListener('scroll', syncScroll);
   editor.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
@@ -157,7 +181,7 @@ TableGroup content [color: #0f766e] {
     }
     const missing = keys.filter((k) => !positions.has(k));
     if (missing.length === keys.length) {
-      const laid = await OD.autoLayout(model, renderer.sizes);
+      const laid = await OD.autoLayout(model, renderer.sizes, state.algorithm);
       laid.forEach((p, k) => positions.set(k, p));
       state.fitted = false;
     } else if (missing.length) {
@@ -382,6 +406,7 @@ TableGroup content [color: #0f766e] {
     editor.value = text;
     $('#doc-name').textContent = name;
     renderGutter();
+    renderHighlight();
     await parse();
   }
 
@@ -420,7 +445,7 @@ TableGroup content [color: #0f766e] {
     'export-svg': () => download(`${baseName()}.svg`, new Blob([renderer.exportSvg()], { type: 'image/svg+xml' })),
     'export-png': () => exportPng(),
     'save-layout': () => download(`${baseName()}.layout.json`, new Blob([JSON.stringify({ positions: Object.fromEntries(state.positions) }, null, 2)], { type: 'application/json' })),
-    'auto-layout': () => applyModel(state.model, { relayout: true }).then(fit),
+    'auto-layout': () => toggleLayoutMenu(),
     fit,
     'zoom-in': () => zoomCenter(1.2),
     'zoom-out': () => zoomCenter(1 / 1.2),
@@ -443,6 +468,35 @@ TableGroup content [color: #0f766e] {
     applyModel(state.model);
   });
 
+  // Auto layout menu: pick an algorithm with the mouse or 1–4; it is remembered for next time.
+  const layoutMenu = $('#layout-menu');
+  function renderLayoutMenu() {
+    layoutMenu.querySelectorAll('[data-algorithm]').forEach((b) => b.classList.toggle('current', b.dataset.algorithm === state.algorithm));
+  }
+  function toggleLayoutMenu(open = layoutMenu.hidden) {
+    layoutMenu.hidden = !open;
+    if (open) renderLayoutMenu();
+  }
+  function relayout(algorithm) {
+    toggleLayoutMenu(false);
+    state.algorithm = algorithm;
+    store.set('layoutAlgorithm', algorithm);
+    return applyModel(state.model, { relayout: true }).then(fit);
+  }
+  for (const a of OD.layoutAlgorithms) {
+    const b = document.createElement('button');
+    b.dataset.algorithm = a.id;
+    b.innerHTML = `${LAYOUT_ICONS[a.id]}<span class="lm-name"></span><kbd></kbd><span class="lm-desc"></span>`;
+    b.querySelector('.lm-name').textContent = a.name;
+    b.querySelector('kbd').textContent = a.key;
+    b.querySelector('.lm-desc').textContent = a.description;
+    b.addEventListener('click', () => relayout(a.id));
+    layoutMenu.append(b);
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (!layoutMenu.hidden && !e.target.closest('#layout-menu, [data-action="auto-layout"]')) toggleLayoutMenu(false);
+  }, true);
+
   window.addEventListener('dragover', (e) => e.preventDefault());
   window.addEventListener('drop', (e) => {
     e.preventDefault();
@@ -460,6 +514,10 @@ TableGroup content [color: #0f766e] {
       actions.open();
     } else if (e.target === editor) {
       return;
+    } else if (!layoutMenu.hidden && (e.key === 'Escape' || OD.layoutAlgorithms.some((a) => a.key === e.key))) {
+      const a = OD.layoutAlgorithms.find((x) => x.key === e.key);
+      if (a) relayout(a.id);
+      else toggleLayoutMenu(false);
     } else if (e.key === 'f') fit();
     else if (e.key === '+' || e.key === '=') zoomCenter(1.2);
     else if (e.key === '-') zoomCenter(1 / 1.2);
@@ -490,7 +548,8 @@ TableGroup content [color: #0f766e] {
   $('#doc-name').textContent = state.docName;
   editor.value = state.source;
   renderGutter();
+  renderHighlight();
   parse();
 
-  OD.app = { state, renderer, openText, actions, fit };
+  OD.app = { state, renderer, openText, actions, fit, relayout };
 })((window.OD = window.OD || {}));

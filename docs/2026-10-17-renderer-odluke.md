@@ -54,5 +54,57 @@ na putu u istom retku.
 ## Otvoreno
 
 - Ideje koje nisu napravljene: izbjegavanje prepreka i za horizontalne segmente; tamna tema
-  dijagrama; syntax highlighting u editoru (sad je običan textarea); spremanje rasporeda u
+  dijagrama; spremanje rasporeda u
   sam `.dbml` (sad localStorage + `.layout.json`).
+
+## 2026-10-19: četiri auto layouta i highlighting
+
+### Auto layout (`src/layout.js`)
+
+Izbornik kao na dbdiagramu: Left-right, Pipeline, Snowflake i Compact (tipke 1–4 dok je izbornik
+otvoren). Izbor se pamti u localStorage (`layoutAlgorithm`).
+
+Svaki algoritam radi u dvije razine: prvo tablice unutar grupe, zatim grupe kao kutije zajedno s
+tablicama bez grupe i bilješkama. Okvir grupe je bbox njenih tablica (`render.js` → `drawGroups`),
+pa algoritam koji bi slagao tablice preko granica grupa dao bi okvire koji se preklapaju. Zbog toga
+je odbačena varijanta s jednim zajedničkim rasporedom svih tablica, kakvu vjerojatno ima dbdiagramov
+Left-right.
+
+| Algoritam | Unutar grupe | Grupe | open-ledger bbox |
+| --- | --- | --- | --- |
+| Left-right | ELK layered (0.75 razmaka) | ELK layered s bridovima između grupa | 2851 × 2418 |
+| Pipeline | stupac, topološki (referencirane prve) | ELK layered, `aspectRatio 3` | 2292 × 1892 |
+| Snowflake | vlastita spirala | vlastita spirala | 2608 × 1977 |
+| Compact | shelf packing, najviše prvo | shelf packing | 1994 × 2030 |
+
+Snowflake je pohlepan: idući je čvor onaj s najviše veza prema već postavljenima. Postavlja se
+što bliže težištu tih susjeda, a mjesto se traži po spirali koja počinje na strani okrenutoj od
+središta. Preklapanje je isključeno konstrukcijom, jer se provjerava svaki kandidat. ELK `stress`
+i `force` su preskočeni jer ne jamče da se kutije ne preklapaju.
+
+Smoke test za svaki algoritam provjerava da nema preklapanja tablica, grupa ni tuđih tablica
+unutar grupe i sprema `test-output/layout-<id>.png`.
+
+### Highlighting u editoru (`src/highlight.js`)
+
+Ispod prozirne `<textarea>` je obojeni `<pre>`, pa undo, selekcija, Tab i skok na grešku ostaju
+nativni. Uvjet je da oba sloja imaju identičan tekst i širine znakova:
+
+- Nema bolda ni kurziva. U nekim fallback fontima mijenjaju širinu, a onda se kursor razilazi s
+  bojama.
+- `<pre>` dobiva dodatni `\n ` na kraju da mu raspon scrolla bude jednak textareinom (provjereno do
+  dna: `scrollTop` 8932 = 8932).
+- Test „highlight matches the editor text" uspoređuje `textContent` s `editor.value`.
+
+Boja se cijeli tekst na svaki `input`. Za 500 redaka to je trenutno. Za vrlo velike datoteke
+trebalo bi bojati samo vidljivi dio.
+
+### Zamke
+
+- **Cache**: `python3 -m http.server` šalje `Last-Modified`, pa Brave nakon izmjene JS-a posluži
+  staru verziju. Treba tvrdi reload (Cmd+Shift+R).
+- **Port 8765** je na ovom Macu stalno zauzet drugim Python procesom. Za lokalno posluživanje koristi
+  se drugi port (npr. 8791).
+- **„Untitled" nakon otvaranja `index.html`**: aplikacija pokazuje ugrađeni SAMPLE ili zadnji izvor
+  iz localStoragea, ne datoteku iz `examples/`. Datoteku treba učitati preko Open, drag & dropa ili
+  `OD.app.openText(name, text)`.

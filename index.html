@@ -16,7 +16,12 @@
       <button data-action="save-dbml" title="Download DBML (⌘S)">Save</button>
     </div>
     <div class="group">
-      <button data-action="auto-layout" title="Discard positions and lay out again">Auto layout</button>
+      <span class="menu-anchor">
+        <button data-action="auto-layout" title="Choose an algorithm; discards manual positions">Auto layout ▾</button>
+        <div id="layout-menu" class="layout-menu" role="menu" hidden>
+          <div class="lm-title">Choose auto arrange algorithm</div>
+        </div>
+      </span>
       <select id="detail" title="Detail level">
         <option value="all">All fields</option>
         <option value="keys">Keys only</option>
@@ -41,7 +46,10 @@
     <section class="editor-pane">
       <div class="editor-wrap">
         <div id="gutter" class="gutter" aria-hidden="true"></div>
-        <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div class="code">
+          <pre id="highlight" class="highlight" aria-hidden="true"></pre>
+          <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </div>
       </div>
       <div id="status"></div>
     </section>
@@ -59,6 +67,7 @@
   <script src="src/model.js"></script>
   <script src="src/geometry.js"></script>
   <script src="src/layout.js"></script>
+  <script src="src/highlight.js"></script>
   <script src="src/render.js"></script>
   <script src="src/app.js"></script>
 </body>

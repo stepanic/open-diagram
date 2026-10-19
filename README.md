@@ -13,7 +13,10 @@ Open `index.html` directly (`file://` works).
 - **Click** a table to highlight its refs, **double-click** to jump to it in the editor.
 - **Hover** a field, header, ref or group title for notes, flags, defaults, enum values and refs.
 - **Detail**: all fields, keys only (PK/FK/referenced), or names only.
-- **Auto layout** discards manual positions. Positions are remembered per file name in
+- **Auto layout** discards manual positions and offers four algorithms (keys **1–4** while the menu
+  is open): **Left-right** (follows foreign keys), **Pipeline** (groups as stages left to right,
+  tables stacked), **Snowflake** (most connected in the centre), **Compact** (rectangle packing).
+  The last one used is remembered. Positions are remembered per file name in
   localStorage; **Layout** downloads them as JSON so they can travel with the `.dbml`.
 
 Supported DBML: tables (schemas, aliases, `headercolor`, notes), fields (pk, unique, not null,
@@ -29,8 +32,9 @@ All visual decisions are in [`src/theme.js`](src/theme.js): fonts, sizes, colour
 | --- | --- |
 | `src/model.js` | DBML → plain model (tables, refs, groups, notes, enums) via `@dbml/core` |
 | `src/geometry.js` | box sizes, ref routing with obstacle avoidance, markers |
-| `src/layout.js` | ELK auto layout, TableGroups as compound nodes |
+| `src/layout.js` | the four auto layouts (ELK layered, stack, spiral, shelf packing), groups first, then the whole diagram |
 | `src/render.js` | SVG drawing and export |
+| `src/highlight.js` | DBML syntax highlighting for the editor (coloured layer under a transparent textarea) |
 | `src/app.js` | editor, pan/zoom/drag, tooltips, persistence, files |
 
 ## Develop

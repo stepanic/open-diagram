@@ -55,6 +55,12 @@ check('every ref drawn', info.domRefs === info.refs, `${info.domRefs}/${info.ref
 check('every group drawn', info.domGroups === info.groups, `${info.domGroups}/${info.groups}`);
 check('no broken ref paths', info.badPaths === 0, `${info.badPaths} bad`);
 
+const hl = await page.evaluate(() => ({
+  same: document.querySelector('#highlight').textContent === `${document.querySelector('#editor').value}\n `,
+  kinds: [...new Set([...document.querySelectorAll('#highlight span')].map((s) => s.className))].sort().join(' '),
+}));
+check('highlight matches the editor text', hl.same && hl.kinds.includes('hl-keyword'), hl.kinds);
+
 const overlap = (a, b, gap = 0) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
 const tableOverlaps = [];
 for (let i = 0; i < info.boxes.length; i++)
@@ -144,12 +150,33 @@ const pngFile = path.join(outDir, 'export.png');
 await pngDl.saveAs(pngFile);
 check('PNG export is a PNG', readFileSync(pngFile).subarray(1, 4).toString() === 'PNG');
 
-// Auto layout puts the dragged table back.
+// Auto layout puts the dragged table back (same algorithm as the first layout).
 await page.click('[data-action="auto-layout"]');
+await page.click('#layout-menu [data-algorithm="left-right"]');
 await page.waitForTimeout(400);
 const relaid = await page.evaluate((k) => OD.app.state.positions.get(k), target.key);
 check('auto layout resets positions', relaid.x === target.x && relaid.y === target.y, JSON.stringify(relaid));
 await page.screenshot({ path: path.join(outDir, '3-final.png') });
+
+// Every algorithm from the menu: no overlaps, every table placed.
+for (const algo of await page.evaluate(() => OD.layoutAlgorithms.map((a) => a.id))) {
+  await page.click('[data-action="auto-layout"]');
+  await page.click(`#layout-menu [data-algorithm="${algo}"]`);
+  await page.waitForTimeout(400);
+  const res = await page.evaluate(() => {
+    const { state, renderer } = OD.app;
+    const boxes = state.model.tables.map((t) => ({ key: t.key, group: t.group, ...renderer.box(t.key) }));
+    const groups = [...renderer.groupBoxes.entries()].map(([key, b]) => ({ key, ...b }));
+    const bb = renderer.contentBox();
+    return { boxes, groups, size: `${Math.round(bb.w)} × ${Math.round(bb.h)}`, menuHidden: document.querySelector('#layout-menu').hidden };
+  });
+  const bad = [];
+  res.boxes.forEach((a, i) => res.boxes.slice(i + 1).forEach((b) => overlap(a, b) && bad.push(`${a.key}×${b.key}`)));
+  res.groups.forEach((a, i) => res.groups.slice(i + 1).forEach((b) => overlap(a, b) && bad.push(`${a.key}×${b.key}`)));
+  for (const g of res.groups) for (const t of res.boxes) if (t.group !== g.key && overlap(t, g)) bad.push(`${t.key} in ${g.key}`);
+  check(`layout ${algo}: no overlaps`, bad.length === 0 && res.menuHidden, bad.length ? bad.join(', ') : res.size);
+  await page.screenshot({ path: path.join(outDir, `layout-${algo}.png`) });
+}
 
 const realErrors = consoleErrors.filter((e) => !/Unable to resolve platform/.test(e));
 check('no console errors', realErrors.length === 0, realErrors.join(' | '));
