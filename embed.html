@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Diagram embed</title>
+  <!-- One read-only diagram over the whole window, for an <iframe>. Everything is in the hash, so
+       the server never sees the schema: #dbml=<deflate-raw base64url>&layout=…&view=…&detail=…,
+       or #src=<URL of a .dbml>. The app's URL ▾ → Copy <iframe> writes these links. -->
+  <style>
+    html, body { height: 100%; margin: 0; background: #fff; }
+    open-diagram { height: 100%; border: 0; border-radius: 0; }
+    open-diagram[hidden] { display: none; }
+    p { margin: 0; padding: 16px; font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #57606a; }
+  </style>
+</head>
+<body>
+  <open-diagram id="diagram"></open-diagram>
+  <p id="note" hidden></p>
+
+  <script src="vendor/dbml-core.js"></script>
+  <script src="src/theme.js"></script>
+  <script src="src/model.js"></script>
+  <script src="src/geometry.js"></script>
+  <script src="src/layout.js"></script>
+  <script src="src/render.js"></script>
+  <script src="src/viewer.js"></script>
+  <script src="src/url.js"></script>
+  <script src="src/embed.js"></script>
+  <script>
+    (function (OD) {
+      OD.appUrl = new URL('./', location.href).href;
+      const el = document.getElementById('diagram');
+      const note = document.getElementById('note');
+      const ATTRS = ['src', 'view', 'detail', 'algorithm', 'focus'];
+      async function show() {
+        let o;
+        try {
+          o = await OD.readHash(location.hash);
+        } catch (err) {
+          console.warn(err);
+        }
+        if (!o) {
+          el.hidden = true;
+          note.hidden = false;
+          note.textContent = o === null ? 'Nothing to show: the link has no #dbml= or #src=.' : 'This link is damaged. Copy it again from Open Diagram (URL ▾ → Copy <iframe>).';
+          return;
+        }
+        note.hidden = true;
+        el.hidden = false;
+        el.layoutData = o.layout || null;
+        el.appHash = o.dbml ? location.hash.slice(1) : null;
+        for (const a of ATTRS) {
+          if (o[a]) el.setAttribute(a, o[a]);
+          else el.removeAttribute(a);
+        }
+        if (!o.src) el.textContent = o.dbml;
+        el.schedule();
+      }
+      window.addEventListener('hashchange', show);
+      show();
+    })(window.OD);
+  </script>
+</body>
+</html>

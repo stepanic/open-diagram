@@ -24,7 +24,13 @@
             <button type="submit">Open</button>
           </form>
           <p class="url-hint">GitHub, Gist and GitLab file links are read from their raw file; any other server has to allow cross-origin requests. A <code>.layout.json</code> next to the <code>.dbml</code> is used too.</p>
-          <div class="url-form"><button type="button" id="url-copy" title="Open a DBML from a URL first; edited text has no link">Copy share link</button></div>
+          <div class="url-form"><button type="button" id="url-copy" title="A file opened from a URL gets a ?url= link; any other text travels in the link itself (#dbml=)">Copy share link</button></div>
+          <div class="lm-title url-sub">Share embed</div>
+          <div class="url-form">
+            <button type="button" data-embed="iframe" title="An &lt;iframe&gt; of embed.html; works wherever iframes do">Copy &lt;iframe&gt;</button>
+            <button type="button" data-embed="element" title="A &lt;script&gt; and an &lt;open-diagram&gt; element for a page you control">Copy &lt;open-diagram&gt;</button>
+          </div>
+          <p class="url-hint">Read-only, with the current positions, view and detail level. Text that is not from a URL is packed into the link, so a large schema makes a long link; a <code>src</code> URL is shorter.</p>
         </div>
       </span>
     </div>

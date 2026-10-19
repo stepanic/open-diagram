@@ -3,7 +3,8 @@
 // turned into one each, the way Mermaid does it. Attributes:
 //   src        URL of a .dbml (GitHub, Gist and GitLab page links work); or the DBML as the
 //              element's text
-//   layout     URL of a .layout.json saved by the app; without it the diagram is auto laid out
+//   layout     URL of a .layout.json saved by the app, or its JSON itself (starting with {); without
+//              it the diagram is auto laid out. The layoutData property takes positions directly.
 //   algorithm  compact (default), left-right, pipeline, snowflake; only the layered ones load ELK
 //   detail     all (default), keys, header
 //   view       DiagramView to show
@@ -140,8 +141,9 @@ svg.dragging { cursor: grabbing; }
           this.message('Loading…');
           text = await fetchText(resolve(src));
         } else text = this.textContent;
-        if (layoutAttr) {
-          const data = JSON.parse(await fetchText(resolve(layoutAttr)));
+        if (this.layoutData) positions = this.layoutData;
+        else if (layoutAttr) {
+          const data = JSON.parse(/^\s*\{/.test(layoutAttr) ? layoutAttr : await fetchText(resolve(layoutAttr)));
           positions = data.positions || data;
         }
       } catch (err) {
@@ -188,8 +190,10 @@ svg.dragging { cursor: grabbing; }
       const r = this.getBoundingClientRect();
       this.sized = !!(r.width && r.height);
       this.focusOnAttr();
-      this.openLink.hidden = !src;
+      // appHash: a #dbml= hash (embed.html sets it) opens the same diagram in the app.
+      this.openLink.hidden = !src && !this.appHash;
       if (src) this.openLink.href = `${OD.appUrl || APP_URL}?url=${encodeURIComponent(resolve(src))}${this.getAttribute('view') ? `&view=${encodeURIComponent(this.getAttribute('view'))}` : ''}`;
+      else if (this.appHash) this.openLink.href = `${OD.appUrl || APP_URL}#${this.appHash}`;
       this.dispatchEvent(new CustomEvent('load', { detail: { tables: model.tables.length, refs: model.refs.length } }));
     }
 

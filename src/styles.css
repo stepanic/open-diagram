@@ -115,6 +115,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .toolbar .url-menu button { display: inline-block; width: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; background: var(--bg); }
 .toolbar .url-menu button:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
 .url-hint { margin: 2px 14px 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.url-menu .url-sub { border-top: 1px solid var(--border); border-bottom: 0; margin: 6px 0 0; padding: 10px 14px 2px; }
 .layout-menu .lm-name { font-weight: 600; }
 .layout-menu kbd {
   font: 11px var(--mono);

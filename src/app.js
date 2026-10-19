@@ -639,7 +639,6 @@ TableGroup content [color: #0f766e] {
     urlMenu.hidden = !open;
     if (!open) return;
     urlInput.value = state.remote || '';
-    $('#url-copy').disabled = !state.remote;
     urlInput.focus();
     urlInput.select();
   }
@@ -653,13 +652,73 @@ TableGroup content [color: #0f766e] {
   });
   $('#url-copy').addEventListener('click', async () => {
     toggleUrlMenu(false);
-    try {
-      await navigator.clipboard.writeText(shareLink());
-      setStatus('Share link copied');
-    } catch {
-      setStatus(shareLink());
-    }
+    copy(await shareUrl(), 'Share link');
   });
+
+  // ---- share: #dbml= links and embeds -----------------------------------------------
+  // Text that did not come from a URL travels in the hash (src/url.js), so a link carries a
+  // locally edited schema and its layout without a server. A page opened from file:// links to
+  // the published app instead of a path on this disk.
+
+  const appBase = () => (/^https?:$/.test(location.protocol) ? location.href.split(/[?#]/)[0].replace(/[^/]*$/, '') : 'https://stepanic.github.io/open-diagram/');
+  const LONG_LINK = 8000; // Slack, e-mail and some chat apps cut longer URLs
+
+  const shareUrl = async () =>
+    state.remote ? shareLink() : `${appBase()}#${await OD.packHash({ dbml: editor.value, name: state.docName, layout: Object.fromEntries(state.positions), view: state.viewName })}`;
+
+  async function copy(text, what) {
+    const long = text.length > LONG_LINK ? ` (${Math.round(text.length / 1024)} KB; long links break in some apps, a src URL is shorter)` : '';
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus(`${what} copied${long}`);
+    } catch {
+      setStatus(text);
+    }
+  }
+
+  async function embedSnippet(kind) {
+    const base = appBase();
+    const src = state.remote && rawUrl(state.remote);
+    const layout = Object.fromEntries([...state.positions].map(([k, p]) => [k, { x: Math.round(p.x), y: Math.round(p.y) }]));
+    const opts = { view: state.viewName, detail: state.detail !== 'all' ? state.detail : null };
+    if (kind === 'iframe') {
+      const hash = await OD.packHash({ ...(src ? { src } : { dbml: editor.value }), layout, ...opts });
+      return `<iframe src="${base}embed.html#${hash}" title="${OD.esc(state.docName)}" width="100%" height="480" style="border: 1px solid #d0d7de; border-radius: 8px" loading="lazy"></iframe>`;
+    }
+    const attrs = [src && `src="${OD.esc(src)}"`, `layout='${JSON.stringify(layout).replace(/&/g, '&amp;').replace(/'/g, '&#39;')}'`, opts.view && `view="${OD.esc(opts.view)}"`, opts.detail && `detail="${opts.detail}"`];
+    const body = src ? '' : `\n${OD.esc(editor.value.trim())}\n`;
+    return `<script src="${base}dist/open-diagram-embed.js"></script>\n<open-diagram ${attrs.filter(Boolean).join(' ')}>${body}</open-diagram>\n`;
+  }
+
+  urlMenu.querySelectorAll('[data-embed]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      toggleUrlMenu(false);
+      copy(await embedSnippet(b.dataset.embed), b.dataset.embed === 'iframe' ? '<iframe>' : '<open-diagram>');
+    }),
+  );
+
+  // index.html#dbml=…: a shared text, opened as a document of its own. The hash is dropped once
+  // read, so a reload shows the local copy with any edits rather than the link again.
+  async function openHash() {
+    let o;
+    try {
+      o = await OD.readHash(location.hash);
+    } catch (err) {
+      await parse();
+      setStatus(`This link is damaged (${err.message})`, 'error');
+      return true;
+    }
+    if (!o) return false;
+    history.replaceState(null, '', location.href.split('#')[0]);
+    if (o.src) {
+      if (await openUrl(o.src, { view: o.view })) return true;
+    } else {
+      await openText(o.name || 'shared.dbml', o.dbml);
+      if (o.view && state.fullModel && state.fullModel.views.some((v) => v.name === o.view)) await setView(o.view);
+    }
+    if (o.layout && state.model) importLayout(o.layout);
+    return true;
+  }
 
   function importLayout(data) {
     const positions = data.positions || data;
@@ -908,7 +967,8 @@ TableGroup content [color: #0f766e] {
   renderHighlight();
   const params = new URLSearchParams(location.search);
   if (params.get('url')) openUrl(params.get('url'), { view: params.get('view'), layout: params.get('layout') }).then((err) => err && parse().then(() => setStatus(err, 'error')));
-  else parse();
+  else openHash().then((opened) => opened || parse());
+  window.addEventListener('hashchange', () => openHash());
 
-  OD.app = { state, renderer, viewer, openText, openUrl, actions, fit, relayout, setView, md, focusLine, openSearch };
+  OD.app = { state, renderer, viewer, openText, openUrl, shareUrl, embedSnippet, actions, fit, relayout, setView, md, focusLine, openSearch };
 })((window.OD = window.OD || {}));
