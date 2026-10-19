@@ -4,6 +4,15 @@
   "private": true,
   "description": "Offline DBML diagram renderer",
   "license": "MIT",
+  "keywords": ["dbml", "erd", "database-diagram", "dbdiagram", "offline"],
+  "homepage": "https://stepanic.github.io/open-diagram/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stepanic/open-diagram.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stepanic/open-diagram/issues"
+  },
   "scripts": {
     "build:vendor": "node scripts/build-vendor.mjs",
     "test": "node scripts/smoke-test.mjs"
