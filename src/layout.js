@@ -3,7 +3,27 @@
 // ungrouped tables and notes. A group box is always the bounding box of its tables, so laying out
 // the members first keeps groups from overlapping each other.
 (function (OD) {
-  const elk = new window.ELK();
+  // ELK (1.6 MB) is needed only by the layered algorithms. When the page has not loaded
+  // elk.bundled.js it is fetched on first use, from OD.elkUrl or next to this script in vendor/.
+  const here = document.currentScript && document.currentScript.src;
+  let elk = null;
+  function getElk() {
+    if (!elk) {
+      elk = window.ELK
+        ? Promise.resolve(new window.ELK())
+        : new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = OD.elkUrl || new URL('../vendor/elk.bundled.js', here || location.href).href;
+            s.onload = () => resolve(new window.ELK());
+            s.onerror = () => {
+              elk = null;
+              reject(new Error(`Could not load ELK from ${s.src}`));
+            };
+            document.head.appendChild(s);
+          });
+    }
+    return elk;
+  }
 
   const ALGORITHMS = [
     {
@@ -73,7 +93,7 @@
       children: items.map((it) => ({ id: it.id, width: it.w, height: it.h })),
       edges: edges.map(([a, b], i) => ({ id: `e${i}`, sources: [a], targets: [b] })),
     };
-    const result = await elk.layout(graph);
+    const result = await (await getElk()).layout(graph);
     const pos = new Map(result.children.map((c) => [c.id, { x: c.x, y: c.y }]));
     return normalise(items, pos);
   }
