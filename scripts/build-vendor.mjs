@@ -23,7 +23,7 @@ const stubSqlParsers = {
 };
 
 await build({
-  stdin: { contents: "export { Parser } from '@dbml/core';", resolveDir: process.cwd() },
+  stdin: { contents: "export { Parser, ModelExporter } from '@dbml/core';", resolveDir: process.cwd() },
   bundle: true,
   minify: true,
   format: 'iife',
